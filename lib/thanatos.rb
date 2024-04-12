@@ -25,12 +25,7 @@ class Thanatos
     case node.type
     when :class, :module
       namespace_scope = scope + [node.children.first.children.last]
-      
-      node.children.each do |child_node|
-        next unless child_node.is_a?(Parser::AST::Node)
-
-        traverse_and_track_tree(child_node, scope: namespace_scope)
-      end
+      traverse_node_children(node, scope: namespace_scope)
 
       return
     when :const
@@ -42,6 +37,10 @@ class Thanatos
       method_definitions << node.children[0]
     end 
 
+    traverse_node_children(node, scope:)
+  end
+
+  def traverse_node_children(node, scope:)
     node.children.each do |child_node|
       next unless child_node.is_a?(Parser::AST::Node)
 
