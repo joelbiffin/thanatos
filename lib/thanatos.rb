@@ -2,12 +2,6 @@ require 'parser'
 require 'prism'
 
 class Thanatos
-  class << self 
-    def run
-      self.new
-    end
-  end
-
   attr_reader :ast, :method_definitions, :method_calls, :constants
 
   def initialize(path: 'example/single_class.rb')
