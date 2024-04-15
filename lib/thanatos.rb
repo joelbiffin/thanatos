@@ -29,7 +29,7 @@ class Thanatos
       method_calls << node.children[1] if node.children[1]
     when :def
       method_definitions << node.children[0]
-    end 
+    end
 
     traverse_node_children(node, scope:)
   end
