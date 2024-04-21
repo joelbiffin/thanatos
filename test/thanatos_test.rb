@@ -23,6 +23,16 @@ class ThanatosTest < Minitest::Test
     assert_equal ["Foo", "Qux"], thanatos.constants.keys.sort
   end
 
+  def test_singleton_method_definitions_and_calls_are_stored
+    thanatos = Thanatos.new(path: 'example/singleton_methods.rb')
+    thanatos.run
+    
+    assert_equal [:baz], thanatos.method_calls
+    assert_equal [:bar, :baz, :baq, :bar], thanatos.method_definitions
+    assert_equal 1, thanatos.constants.keys.length
+    assert_equal ["Foo"], thanatos.constants.keys.sort
+  end
+
   def test_multiple_classes_and_nested_namespace_method_definitions_and_calls_are_stored
     thanatos = Thanatos.new(path: 'example/multiple_classes_and_namespaces.rb') 
     thanatos.run
