@@ -5,11 +5,31 @@ class Thanatos
 
   Methods = Data.define(:definitions, :calls)
 
+  class Constants < Hash
+    def find_or_initialize(scope:)
+      self[scope.join("::")] ||= Methods.new(definitions: [], calls: [])
+    end 
+
+    def add_definition(node, scope:)
+      find_or_initialize(scope:).definitions << node.name
+    end
+
+    def add_call(node, scope:)
+      find_or_initialize(scope:).calls << node.name
+    end 
+
+    def definitions
+      map { |_, methods| methods.definitions }.flatten.compact
+    end
+
+    def calls
+      map { |_, methods| methods.calls }.flatten.compact
+    end
+  end
+
   def initialize(path: 'example/single_class.rb')
     @ast = Prism.parse_file(path)
-    @constants = {}
-    @method_definitions = []
-    @method_calls = []
+    @constants = Constants.new 
   end
 
   def run
@@ -17,31 +37,25 @@ class Thanatos
   end
 
   def method_definitions
-    constants.map do |constants, methods|
-      methods.definitions
-    end.flatten.compact
+    constants.definitions
   end
 
   def method_calls
-    constants.map do |constants, methods|
-      methods.calls
-    end.flatten.compact
+    constants.calls 
   end
 
   def traverse_prism(node, scope: [])
     case node
     when Prism::ClassNode, Prism::ModuleNode
       namespace_scope = scope + [node.name]
-      constants[namespace_scope.join("::")] = Methods.new(definitions: [], calls: [])
+      constants.find_or_initialize(scope: namespace_scope)
       traverse_children(node, scope: namespace_scope) 
       
       return
     when Prism::DefNode
-      @method_definitions << node.name
-      constants[scope.join("::")].definitions << node.name
+      constants.add_definition(node, scope:)
     when Prism::CallNode 
-      @method_calls << node.name
-      constants[scope.join("::")].calls << node.name
+      constants.add_call(node, scope:)
     end
 
     traverse_children(node, scope:)
