@@ -4,6 +4,15 @@ class Thanatos
   attr_reader :ast, :constants
 
   Methods = Data.define(:definitions, :calls)
+  Definition = Data.define(:name, :type) do
+    def instance?
+      type == :instance
+    end
+
+    def class?
+      type == :class
+    end
+  end 
 
   class Constants < Hash
     def find_or_initialize(scope:)
@@ -11,7 +20,10 @@ class Thanatos
     end 
 
     def add_definition(node, scope:)
-      find_or_initialize(scope:).definitions << node.name
+      find_or_initialize(scope:).definitions << Definition.new(
+        name: node.name,
+        type: node.receiver == :self ? :class : :instance,
+      )
     end
 
     def add_call(node, scope:)
@@ -37,7 +49,15 @@ class Thanatos
   end
 
   def method_definitions
-    constants.definitions
+    constants.definitions.map(&:name)
+  end
+
+  def instance_method_definitions
+    constants.defintions.filter(&:instance?).map(&:name)
+  end
+
+  def class_method_definitions
+    constants.definitions.filter(&:class?).map(&:name)
   end
 
   def method_calls
