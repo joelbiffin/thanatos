@@ -8,7 +8,7 @@ class Thanatos
   class Constants < Hash
     def find_or_initialize(scope:)
       self[scope.join("::")] ||= Methods.new(definitions: [], calls: [])
-    end 
+    end
 
     def add_definition(node, scope:)
       find_or_initialize(scope:).definitions << node.name
@@ -16,7 +16,7 @@ class Thanatos
 
     def add_call(node, scope:)
       find_or_initialize(scope:).calls << node.name
-    end 
+    end
 
     def definitions
       map { |_, methods| methods.definitions }.flatten.compact
@@ -29,7 +29,7 @@ class Thanatos
 
   def initialize(path: 'example/single_class.rb')
     @ast = Prism.parse_file(path)
-    @constants = Constants.new 
+    @constants = Constants.new
   end
 
   def run
@@ -41,7 +41,7 @@ class Thanatos
   end
 
   def method_calls
-    constants.calls 
+    constants.calls
   end
 
   def traverse_prism(node, scope: [])
@@ -49,12 +49,12 @@ class Thanatos
     when Prism::ClassNode, Prism::ModuleNode
       namespace_scope = scope + [node.name]
       constants.find_or_initialize(scope: namespace_scope)
-      traverse_children(node, scope: namespace_scope) 
-      
+      traverse_children(node, scope: namespace_scope)
+
       return
     when Prism::DefNode
       constants.add_definition(node, scope:)
-    when Prism::CallNode 
+    when Prism::CallNode
       constants.add_call(node, scope:)
     end
 
