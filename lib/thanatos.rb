@@ -7,19 +7,26 @@ class Thanatos
 
   class Constants < Hash
     def find_or_initialize(scope:)
-      self[scope.join("::")] ||= Methods.new(definitions: [], calls: [])
+      self[scope.join("::")] ||= Methods.new(
+        definitions: {
+          private: [],
+          public: [],
+          protected: []
+        },
+        calls: []
+      )
     end
 
-    def add_definition(node, scope:)
-      find_or_initialize(scope:).definitions << node.name
+    def add_definition(node, scope:, visibility: :public)
+      find_or_initialize(scope:).definitions[visibility] << node.name
     end
 
     def add_call(node, scope:)
       find_or_initialize(scope:).calls << node.name
     end
 
-    def definitions
-      map { |_, methods| methods.definitions }.flatten.compact
+    def definitions(visibility)
+      map { |_, methods| methods.definitions[visibility] }.flatten.compact
     end
 
     def calls
@@ -27,17 +34,20 @@ class Thanatos
     end
   end
 
+  VISIBILITY_MODIFIERS = [:public, :protected, :private].freeze
+
   def initialize(path: 'example/single_class.rb')
     @ast = Prism.parse_file(path)
     @constants = Constants.new
+    @visibility = :public
   end
 
   def run
     traverse_prism(ast.value)
   end
 
-  def method_definitions
-    constants.definitions
+  def method_definitions(visibility)
+    constants.definitions(visibility)
   end
 
   def method_calls
@@ -53,9 +63,13 @@ class Thanatos
 
       return
     when Prism::DefNode
-      constants.add_definition(node, scope:)
+      constants.add_definition(node, scope:, visibility: @visibility)
     when Prism::CallNode
-      constants.add_call(node, scope:)
+      if VISIBILITY_MODIFIERS.include?(node.name)
+        @visibility = node.name
+      else
+        constants.add_call(node, scope:)
+      end
     end
 
     traverse_children(node, scope:)
