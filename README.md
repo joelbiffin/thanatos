@@ -1,6 +1,6 @@
 # Thanatos
 
-[Thanatos](https://en.wikipedia.org/wiki/Thanatos) was the Ancient Greek's personification of death itself. It's not all doom and gloom though. This ruby project aims to personify death in a helpful way. Identifying code that has no references in your codebase - aka safe to delete! 
+[Thanatos](https://en.wikipedia.org/wiki/Thanatos) was the Ancient Greek's personification of death itself. It's not all doom and gloom though. This ruby project aims to personify death in a helpful way. Identifying code that has no references in your codebase - aka safe to delete!
 
 Whether code is safe to delete or not is a bit of a murky question in Ruby - especially in untyped Ruby. Fear not though, as dangling unused methods are a pretty safe place to start deleting things. Let's start there and see where we get to.
 
@@ -26,6 +26,15 @@ Please note that this checklist is ordered and maintained by me, based on the th
 
 At the moment, this is a personal project, so I will not make any effort to abide by backward-compatability of Ruby pre-3.x - sorry. Pull requests are always welcome though.
 
+### Testing
+
+The project just uses minitest and the test suite can be run via, `rake` or `rake test`.
+
+To run a specific test method, you can use the `TEST` and `TESTOPTS` environment variables:
+
+````
+rake test TEST='test/thanatos_test.rb' TESTOPTS="--name=test_single_class_method_definitions_and_called_are_stored -v"
+```
 
 ## Contributing
 
