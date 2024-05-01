@@ -26,11 +26,11 @@ class Thanatos
     end
 
     def definitions(visibility)
-      map { |_, methods| methods.definitions[visibility] }.flatten.compact
+      each_with_object({}) { |(klass, methods), hash| hash[klass] = methods.definitions[visibility] }
     end
 
     def calls
-      map { |_, methods| methods.calls }.flatten.compact
+      each_with_object({}) { |(klass, methods), hash| hash[klass] = methods.calls }
     end
   end
 
@@ -48,6 +48,12 @@ class Thanatos
 
   def method_definitions(visibility)
     constants.definitions(visibility)
+  end
+
+  def unused_private_methods
+    method_definitions(:private).each_with_object({}) do |(key, value), hash|
+      hash[key] = value - method_calls[key]
+    end
   end
 
   def method_calls

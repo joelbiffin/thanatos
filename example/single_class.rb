@@ -3,6 +3,8 @@ class Foo
     baz
   end
 
+  private
+
   def baz
     "calling baz"
   end
