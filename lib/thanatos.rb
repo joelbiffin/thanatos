@@ -6,7 +6,12 @@ class Thanatos
   Methods = Data.define(:definitions, :calls)
 
   class Constants < Hash
-    def find_or_initialize(scope:)
+    def find_or_initialize(scope:, node:)
+      if node.superclass
+        superclass = node.superclass.name.to_s
+        hash = self[superclass]
+        debugger
+      end
       self[scope.join("::")] ||= Methods.new(
         definitions: {
           private: [],
@@ -18,11 +23,11 @@ class Thanatos
     end
 
     def add_definition(node, scope:, visibility: :public)
-      find_or_initialize(scope:).definitions[visibility] << node.name
+      self[scope.join("::")].definitions[visibility] << node.name
     end
 
     def add_call(node, scope:)
-      find_or_initialize(scope:).calls << node.name
+      self[scope.join("::")].calls << node.name
     end
 
     def definitions(visibility)
@@ -64,7 +69,7 @@ class Thanatos
     case node
     when Prism::ClassNode, Prism::ModuleNode
       namespace_scope = scope + [node.name]
-      constants.find_or_initialize(scope: namespace_scope)
+      constants.find_or_initialize(scope: namespace_scope, node: node)
       traverse_children(node, scope: namespace_scope)
 
       return
