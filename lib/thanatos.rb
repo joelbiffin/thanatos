@@ -63,6 +63,7 @@ class Thanatos
   def traverse_prism(node, scope: [])
     case node
     when Prism::ClassNode, Prism::ModuleNode
+      @visibility = :public
       namespace_scope = scope + [node.name]
       constants.find_or_initialize(scope: namespace_scope)
       traverse_children(node, scope: namespace_scope)
