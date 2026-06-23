@@ -1,20 +1,21 @@
 class Base
-  def foo
-    bar
+  def perform
+    setup
   end
 
   private
 
-  # This is probably optional
-  def bar
-    raise NotImplementedError
+  def setup
+    "ready"
+  end
+
+  def orphan
+    "never referenced anywhere"
   end
 end
 
-class Thing < Base
-  private
-
-  def bar
-    ‘hello!’
+class Worker < Base
+  def run
+    setup
   end
 end
