@@ -96,6 +96,32 @@ non-trivial semantic properties are undecidable (Rice), so we approximate
 soundly (abstract interpretation)" — that sentence is the entire arc of these
 documents.
 
+## Computability resources
+
+Free, well-regarded courses and texts for the mathematics behind these proofs —
+computability theory and its bridge to program analysis.
+
+- **MIT 18.404J *Theory of Computation* — Prof. Michael Sipser (Fall 2020), on
+  MIT OpenCourseWare (`ocw.mit.edu`).** Full video lectures by the author of the
+  standard textbook. Its decidability block — the halting problem, mapping
+  reducibility, and Rice's theorem — is exactly the machinery the undecidable and
+  concern documents use. The single best match; start with the lectures from
+  "Decidability" through "Reducibility."
+- **Boaz Barak, *Introduction to Theoretical Computer Science* (Harvard CS121) —
+  free online at `introtcs.org`.** A modern, free textbook with exercises that
+  frames Turing machines and undecidability for a CS audience. The best
+  self-paced companion to the videos.
+- **NPTEL *Theory of Computation* (the IITs) — free on YouTube / `nptel.ac.in`.**
+  Many paced hours of video and worked examples, if you prefer that format.
+- **Møller & Schwartzbach, *Static Program Analysis* (Aarhus, free online).** The
+  continuation into program analysis, where "everything interesting is
+  undecidable (Rice), so approximate soundly (abstract interpretation)" becomes
+  the actual engineering — the §7 strategy of the undecidable doc.
+
+**Suggested path:** Sipser's decidability/reducibility lectures (*why it is
+impossible*) → Møller & Schwartzbach (*what we compute instead*). That sequence
+is the whole arc of these documents, in two free courses.
+
 ## Further reading (master bibliography)
 
 Each proof document repeats the subset most relevant to it; this is the union.
@@ -155,20 +181,3 @@ Each proof document repeats the subset most relevant to it; this is the union.
   confront precisely the metaprogramming barrier proved here, and both respond
   the abstract-interpretation way: analyse the static fragment, fall back to
   `T.untyped` / dynamic checks on the rest.
-
-**Free online lecture courses**
-- **MIT 18.404J *Theory of Computation* (Prof. Michael Sipser), Fall 2020** —
-  full video lectures on MIT OpenCourseWare (`ocw.mit.edu`), taught by the author
-  of the standard textbook. Its lectures on decidability, the halting problem,
-  reducibility, and Rice's theorem are exactly the machinery these documents use;
-  the single best match.
-- **Boaz Barak, *Introduction to Theoretical Computer Science* (Harvard CS121)**
-  — a free, modern online textbook with exercises at `introtcs.org`; the
-  computability chapters frame Turing machines and undecidability for a CS
-  audience rather than a pure-logic one.
-- **NPTEL *Theory of Computation*** (the IITs) — a free, comprehensive video
-  lecture series on YouTube / `nptel.ac.in`, if you prefer many paced hours of
-  video.
-- For the bridge from "it's undecidable" to "so here is what we soundly compute
-  instead," Møller & Schwartzbach's *Static Program Analysis* notes (listed
-  above) are the freely-available continuation into program analysis itself.
