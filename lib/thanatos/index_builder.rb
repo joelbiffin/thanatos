@@ -8,6 +8,11 @@ module Thanatos
       class_eval module_eval instance_eval instance_exec eval
     ].freeze
 
+    # send/public_send/__send__/method(:x) with a *literal* selector resolve to a
+    # definite call or reference, so they acquit the target. A computed selector
+    # stays in DYNAMIC_DISPATCH above (undecidable -> low-confidence hint).
+    RESOLVED_DISPATCH = %i[send public_send __send__ method public_method instance_method].freeze
+
     def initialize(index, file:)
       super()
       @index = index
@@ -44,16 +49,18 @@ module Thanatos
       end
 
       facts = current
-      if facts
-        if node.receiver.nil? || node.receiver.is_a?(Prism::SelfNode)
-          facts.implicit_calls << node.name
-        else
-          facts.explicit_calls << node.name
-        end
-        facts.dynamic_markers << node.name if DYNAMIC_DISPATCH.include?(node.name)
-        record_alias_method(node, facts)
+      return visit_child_nodes(node) unless facts
+
+      target = resolved_dispatch_target(node)
+      if target
+        record_call(facts, node.receiver, target)
+        visit_dispatch_extras(node)
+        return
       end
 
+      record_call(facts, node.receiver, node.name)
+      facts.dynamic_markers << node.name if DYNAMIC_DISPATCH.include?(node.name)
+      record_alias_method(node, facts)
       visit_child_nodes(node)
     end
 
@@ -67,6 +74,15 @@ module Thanatos
       if facts && node.old_name.is_a?(Prism::SymbolNode)
         facts.implicit_calls << node.old_name.unescaped.to_sym
       end
+      super
+    end
+
+    # `&:foo` calls foo on each element, not on self, so it is not a usage hint
+    # for self's methods. Skip the symbol; visit other block expressions (e.g.
+    # `&method(:foo)`, which does reference foo) normally.
+    def visit_block_argument_node(node)
+      return if node.expression.is_a?(Prism::SymbolNode)
+
       super
     end
 
@@ -124,6 +140,29 @@ module Thanatos
       return unless original.is_a?(Prism::SymbolNode) || original.is_a?(Prism::StringNode)
 
       facts.implicit_calls << original.unescaped.to_sym
+    end
+
+    def record_call(facts, receiver, name)
+      if receiver.nil? || receiver.is_a?(Prism::SelfNode)
+        facts.implicit_calls << name
+      else
+        facts.explicit_calls << name
+      end
+    end
+
+    def resolved_dispatch_target(node)
+      return nil unless RESOLVED_DISPATCH.include?(node.name)
+
+      selector = node.arguments&.arguments&.first
+      return nil unless selector.is_a?(Prism::SymbolNode) || selector.is_a?(Prism::StringNode)
+
+      selector.unescaped.to_sym
+    end
+
+    def visit_dispatch_extras(node)
+      visit(node.receiver) if node.receiver
+      (node.arguments&.arguments || [])[1..].each { |argument| visit(argument) }
+      visit(node.block) if node.block
     end
 
     def constant_parts(node)

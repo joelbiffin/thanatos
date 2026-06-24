@@ -117,7 +117,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Precision gaps (we downgrade where we could be exact) ---
 
   def test_send_with_a_literal_symbol_acquits_rather_than_downgrades
-    skip "Imprecision: send(:literal) is a definite call, but is currently treated as a low-confidence hint (symbol literal + dynamic marker) instead of an outright acquittal."
     candidates = candidates_for(<<~RUBY)
       class Foo
         def call
@@ -312,7 +311,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Precision: symbols that are not really usage hints ----------------
 
   def test_method_object_reference_acquits_rather_than_downgrades
-    skip "Imprecision: `method(:helper)` is a definite reference to the method, but is treated as a low-confidence hint (symbol literal + dynamic marker) instead of acquitting it outright."
     candidates = candidates_for(<<~RUBY)
       class Foo
         def call
@@ -328,7 +326,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_block_pass_symbol_does_not_falsely_downgrade_an_unrelated_method
-    skip "Imprecision: a block-pass symbol (`&:process`) is recorded as a symbol literal, so an unrelated, genuinely-dead private of the same name is downgraded to low confidence instead of reported at high. `&:process` calls process on each element, not on self."
     candidates = candidates_for(<<~RUBY)
       class Foo
         def call

@@ -80,10 +80,12 @@ class IndexBuilderTest < Minitest::Test
     refute_includes facts.implicit_calls, :external
   end
 
+  # A *computed* selector stays a marker; a literal one now resolves (acquits),
+  # so this uses a variable selector to exercise the dynamic-dispatch path.
   def test_records_dynamic_dispatch_markers
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
-        def a; send(:something); end
+        def a(name); send(name); end
       end
     RUBY
 
