@@ -333,4 +333,49 @@ class KnownLimitationsTest < Minitest::Test
     analyzer = Thanatos::Analyzer.new(paths: [])
     assert_respond_to analyzer, :parse_errors
   end
+
+  # ======================================================================
+  # Found by dogfooding the tool against a large Rails app (meetcleo).
+  # Statically-fixable false positives: methods the Ruby runtime invokes
+  # directly, so they (and the private helpers they reach) are not dead.
+  # The fix is decidable and language-level: treat the runtime-hook names as
+  # always-reachable roots. (Framework-invoked methods - Rails controller
+  # hooks, serializer include_X? conventions, gem template methods - are a
+  # different problem: the caller is outside the analysed code, the same open
+  # call surface as public methods, which the runtime tier addresses.)
+  # ======================================================================
+
+  def test_initialize_is_a_reachable_root
+    skip "Bug: initialize is the constructor (invoked by .new), so a private initialize - and the helpers it calls - are not dead. 8 false positives in meetcleo."
+    candidates = candidates_for(<<~RUBY)
+      class Foo
+        private
+
+        def initialize
+          setup
+        end
+
+        def setup; end
+      end
+    RUBY
+
+    assert_empty candidates
+  end
+
+  def test_runtime_hook_methods_are_reachable_roots
+    skip "Bug: method_added / method_missing / respond_to_missing? / inherited / included / extended / prepended / const_missing are invoked by the Ruby runtime, never by an explicit call, so they and their helpers are not dead. Found via ActionOwnership#method_added in meetcleo."
+    candidates = candidates_for(<<~RUBY)
+      module M
+        private
+
+        def method_added(name)
+          track(name)
+        end
+
+        def track(name); end
+      end
+    RUBY
+
+    assert_empty candidates
+  end
 end
