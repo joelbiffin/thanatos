@@ -52,6 +52,21 @@ module Thanatos
       leave
     end
 
+    # `Const = Class.new(Super)` defines a named class via a factory call, with
+    # an optional block body. Name it by the constant and capture its
+    # superclass here, rather than letting it fall through as an anonymous
+    # class, so the inheritance chain stays linked.
+    def visit_constant_write_node(node)
+      if class_dot_new?(node.value)
+        enter_factory_class(node, node.value)
+        visit(node.value.block) if node.value.block.is_a?(Prism::BlockNode)
+        leave
+        return
+      end
+
+      super
+    end
+
     def visit_def_node(node)
       facts = current
       if facts && node.receiver.nil?
@@ -152,10 +167,7 @@ module Thanatos
       reference = constant_parts(superclass)
       facts.superclass_ref = reference unless reference.empty?
 
-      @scope << fqn
-      @visibility << :public
-      @facts << facts
-      @method << nil
+      push_scope(fqn, facts)
     end
 
     def leave
@@ -163,6 +175,30 @@ module Thanatos
       @visibility.pop
       @scope.pop
       @method.pop
+    end
+
+    def push_scope(fqn, facts)
+      @scope << fqn
+      @visibility << :public
+      @facts << facts
+      @method << nil
+    end
+
+    def class_dot_new?(node)
+      node.is_a?(Prism::CallNode) &&
+        node.receiver.is_a?(Prism::ConstantReadNode) &&
+        node.receiver.name == :Class && node.name == :new
+    end
+
+    def enter_factory_class(write_node, call_node)
+      own = write_node.name.to_s
+      fqn = @scope.empty? ? own : "#{@scope.last}::#{own}"
+      facts = @index.fetch(fqn, nesting: @scope.dup)
+
+      reference = constant_parts((call_node.arguments&.arguments || []).first)
+      facts.superclass_ref = reference unless reference.empty?
+
+      push_scope(fqn, facts)
     end
 
     def current
@@ -184,10 +220,7 @@ module Thanatos
 
     def visit_anonymous_class(node)
       fqn = "(anonymous):#{location(node)}"
-      @facts << @index.fetch(fqn, nesting: @scope.dup)
-      @scope << fqn
-      @visibility << :public
-      @method << nil
+      push_scope(fqn, @index.fetch(fqn, nesting: @scope.dup))
       visit(node.block)
       leave
     end

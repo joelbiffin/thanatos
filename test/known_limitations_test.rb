@@ -64,7 +64,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_dynamically_computed_superclass_keeps_the_chain_linked
-    skip "Not yet: a superclass introduced via Class.new / a computed constant produces no ClassNode, so the inheritance chain breaks and an inherited private looks dead."
     candidates = candidates_for(<<~RUBY)
       class Animal
         private
