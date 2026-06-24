@@ -130,4 +130,33 @@ class ReachabilityTest < Minitest::Test
     assert_equal :low, candidate.confidence
     assert(candidate.reasons.any? { |r| r.include?("explicit call") })
   end
+
+  # Instance methods and class methods are separate method tables. A method of
+  # one kind must not keep a same-named method of the other kind alive, and the
+  # two must not collapse into one candidate.
+  def test_public_class_method_does_not_keep_a_dead_private_instance_method_alive
+    candidates = candidates_for(<<~RUBY)
+      class Foo
+        private
+
+        def helper; end       # dead private instance method
+
+        def self.helper; end  # unrelated public class method, same name
+      end
+    RUBY
+
+    assert_equal [:helper], candidate_names(candidates)
+  end
+
+  def test_public_instance_method_does_not_keep_a_dead_private_class_method_alive
+    candidates = candidates_for(<<~RUBY)
+      class Foo
+        private_class_method def self.helper; end  # dead private class method
+
+        def helper; end                            # unrelated public instance method
+      end
+    RUBY
+
+    assert_equal [:helper], candidate_names(candidates)
+  end
 end

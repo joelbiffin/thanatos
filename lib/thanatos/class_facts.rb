@@ -4,7 +4,7 @@ module Thanatos
     # seed reachability like a root.
     CLASS_BODY = :"(class body)"
 
-    attr_reader :fqn, :nesting, :call_edges, :explicit_calls,
+    attr_reader :fqn, :nesting, :call_edges, :singleton_call_edges, :explicit_calls,
                 :symbol_literals, :dynamic_markers, :include_refs
     attr_accessor :superclass_ref, :superclass_fqn, :include_fqns
 
@@ -16,8 +16,11 @@ module Thanatos
       @include_refs = []
       @include_fqns = []
       @definitions = []
+      @singleton_definitions = []
       @visibility_marks = {}
+      @singleton_visibility_marks = {}
       @call_edges = Hash.new { |edges, caller| edges[caller] = Set.new }
+      @singleton_call_edges = Hash.new { |edges, caller| edges[caller] = Set.new }
       @explicit_calls = Set.new
       @symbol_literals = Set.new
       @dynamic_markers = Set.new
@@ -27,8 +30,16 @@ module Thanatos
       @definitions << MethodDefinition.new(name:, visibility:, location:)
     end
 
+    def add_singleton_definition(name:, visibility:, location:)
+      @singleton_definitions << MethodDefinition.new(name:, visibility:, location:)
+    end
+
     def add_call(caller, callee)
       @call_edges[caller] << callee
+    end
+
+    def add_singleton_call(caller, callee)
+      @singleton_call_edges[caller] << callee
     end
 
     def add_include(ref)
@@ -39,6 +50,10 @@ module Thanatos
       @visibility_marks[name] = visibility
     end
 
+    def mark_singleton_visibility(name, visibility)
+      @singleton_visibility_marks[name] = visibility
+    end
+
     # Every method called (implicitly / via self) anywhere in the class,
     # regardless of which method made the call. Derived from the call graph.
     def implicit_calls
@@ -46,8 +61,18 @@ module Thanatos
     end
 
     def definitions
-      @definitions.map do |definition|
-        marked = @visibility_marks[definition.name]
+      resolved(@definitions, @visibility_marks)
+    end
+
+    def singleton_definitions
+      resolved(@singleton_definitions, @singleton_visibility_marks)
+    end
+
+    private
+
+    def resolved(definitions, marks)
+      definitions.map do |definition|
+        marked = marks[definition.name]
         next definition unless marked
 
         MethodDefinition.new(

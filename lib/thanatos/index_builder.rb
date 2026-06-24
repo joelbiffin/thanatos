@@ -42,6 +42,7 @@ module Thanatos
       @visibility = []
       @facts = []
       @method = []
+      @singleton_context = []
     end
 
     def visit_class_node(node)
@@ -73,16 +74,19 @@ module Thanatos
 
     def visit_def_node(node)
       facts = current
+      singleton = node.receiver.is_a?(Prism::SelfNode)
       if facts
         if node.receiver.nil?
           facts.add_definition(name: node.name, visibility: @visibility.last, location: location(node))
-        elsif node.receiver.is_a?(Prism::SelfNode)
+        elsif singleton
           # `def self.x` is a class method: public unless private_class_method.
-          facts.add_definition(name: node.name, visibility: :public, location: location(node))
+          facts.add_singleton_definition(name: node.name, visibility: :public, location: location(node))
         end
       end
       @method << node.name
+      @singleton_context << singleton
       visit_child_nodes(node)
+      @singleton_context.pop
       @method.pop
     end
 
@@ -140,7 +144,7 @@ module Thanatos
     def visit_alias_method_node(node)
       facts = current
       if facts && node.old_name.is_a?(Prism::SymbolNode)
-        facts.add_call(@method.last || ClassFacts::CLASS_BODY, node.old_name.unescaped.to_sym)
+        record_self_call(facts, node.old_name.unescaped.to_sym)
       end
       super
     end
@@ -189,6 +193,7 @@ module Thanatos
       @visibility.pop
       @scope.pop
       @method.pop
+      @singleton_context.pop
     end
 
     def push_scope(fqn, facts)
@@ -196,6 +201,7 @@ module Thanatos
       @visibility << :public
       @facts << facts
       @method << nil
+      @singleton_context << false
     end
 
     def class_dot_new?(node)
@@ -266,9 +272,9 @@ module Thanatos
       (node.arguments&.arguments || []).each do |argument|
         case argument
         when Prism::SymbolNode, Prism::StringNode
-          facts&.mark_visibility(argument.unescaped.to_sym, visibility)
+          facts&.mark_singleton_visibility(argument.unescaped.to_sym, visibility)
         when Prism::DefNode
-          facts&.mark_visibility(argument.name, visibility)
+          facts&.mark_singleton_visibility(argument.name, visibility)
           visit_def_node(argument)
         else
           visit(argument)
@@ -282,14 +288,26 @@ module Thanatos
       original = (node.arguments&.arguments || [])[1]
       return unless original.is_a?(Prism::SymbolNode) || original.is_a?(Prism::StringNode)
 
-      facts.add_call(@method.last || ClassFacts::CLASS_BODY, original.unescaped.to_sym)
+      record_self_call(facts, original.unescaped.to_sym)
     end
 
     def record_call(facts, receiver, name)
       if receiver.nil? || receiver.is_a?(Prism::SelfNode)
-        facts.add_call(@method.last || ClassFacts::CLASS_BODY, name)
+        record_self_call(facts, name)
       else
         facts.explicit_calls << name
+      end
+    end
+
+    # An implicit/self call lands in the instance graph by default, but in the
+    # body of a `def self.x` (or another class-method context) it is a class-
+    # method call, so it lands in the singleton graph.
+    def record_self_call(facts, callee)
+      caller = @method.last || ClassFacts::CLASS_BODY
+      if @singleton_context.last
+        facts.add_singleton_call(caller, callee)
+      else
+        facts.add_call(caller, callee)
       end
     end
 
@@ -334,9 +352,15 @@ module Thanatos
       end
 
       body_method = names.first if node.name == :define_method
-      @method << body_method if body_method
+      if body_method
+        @method << body_method
+        @singleton_context << false
+      end
       visit(node.block) if node.block
-      @method.pop if body_method
+      if body_method
+        @singleton_context.pop
+        @method.pop
+      end
 
       (node.arguments&.arguments || []).each do |argument|
         visit(argument) unless argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
