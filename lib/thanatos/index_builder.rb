@@ -13,6 +13,12 @@ module Thanatos
     # stays in DYNAMIC_DISPATCH above (undecidable -> low-confidence hint).
     RESOLVED_DISPATCH = %i[send public_send __send__ method public_method instance_method].freeze
 
+    # Macros that define methods with literal names. attr_writer/accessor also
+    # define the `name=` setter. A computed name is not resolvable here and
+    # falls through to the generic path (so a computed define_method stays a
+    # dynamic marker).
+    ATTR_MACROS = { attr_reader: %i[reader], attr_writer: %i[writer], attr_accessor: %i[reader writer] }.freeze
+
     def initialize(index, file:)
       super()
       @index = index
@@ -50,6 +56,12 @@ module Thanatos
 
       facts = current
       return visit_child_nodes(node) unless facts
+
+      defined = definition_macro_names(node)
+      unless defined.empty?
+        handle_definition_macro(node, facts, defined)
+        return
+      end
 
       target = resolved_dispatch_target(node)
       if target
@@ -163,6 +175,43 @@ module Thanatos
       visit(node.receiver) if node.receiver
       (node.arguments&.arguments || [])[1..].each { |argument| visit(argument) }
       visit(node.block) if node.block
+    end
+
+    def definition_macro_names(node)
+      return [] unless node.receiver.nil? || node.receiver.is_a?(Prism::SelfNode)
+
+      if node.name == :define_method
+        selector = (node.arguments&.arguments || []).first
+        return [] unless selector.is_a?(Prism::SymbolNode) || selector.is_a?(Prism::StringNode)
+
+        [selector.unescaped.to_sym]
+      elsif (kinds = ATTR_MACROS[node.name])
+        literal_symbol_arguments(node).flat_map do |base|
+          names = []
+          names << base if kinds.include?(:reader)
+          names << :"#{base}=" if kinds.include?(:writer)
+          names
+        end
+      else
+        []
+      end
+    end
+
+    def handle_definition_macro(node, facts, names)
+      names.each do |name|
+        facts.add_definition(name: name, visibility: @visibility.last, location: location(node))
+      end
+
+      visit(node.block) if node.block
+      (node.arguments&.arguments || []).each do |argument|
+        visit(argument) unless argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
+      end
+    end
+
+    def literal_symbol_arguments(node)
+      (node.arguments&.arguments || []).filter_map do |argument|
+        argument.unescaped.to_sym if argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
+      end
     end
 
     def constant_parts(node)

@@ -89,7 +89,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Definition-tracking gaps (we only see lexical `def`) ---
 
   def test_methods_defined_via_define_method_are_tracked
-    skip "Not yet: define_method creates no DefNode, so dynamically-defined methods are invisible to definition tracking (and so can never be reported as unused)."
     candidates = candidates_for(<<~RUBY)
       class Foo
         define_method(:dynamic) { 1 }
@@ -239,7 +238,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Methods we never see, so cannot flag -----------------------------
 
   def test_unused_private_attr_reader_is_reported
-    skip "Not yet: attr_reader/writer/accessor generate methods with no DefNode, so an unused private attribute is invisible. Distinct from, and far more common than, define_method."
     candidates = candidates_for(<<~RUBY)
       class Foo
         private
