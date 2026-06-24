@@ -149,7 +149,6 @@ class KnownLimitationsTest < Minitest::Test
   # means building a call graph and marking from roots, not name-matching.
 
   def test_mutually_recursive_dead_private_methods_are_reported
-    skip "Bug: reachability treats any in-edge as alive. Two privates that only call each other are dead, but each is the other's caller, so neither is flagged."
     candidates = candidates_for(<<~RUBY)
       class Foo
         private
@@ -167,7 +166,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_self_recursive_dead_private_method_is_reported
-    skip "Bug: a private method whose only caller is itself counts as called, so a dead recursive helper is never flagged."
     candidates = candidates_for(<<~RUBY)
       class Foo
         private
@@ -181,7 +179,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_private_method_reachable_only_through_dead_code_is_reported
-    skip "Bug: we catch a private with no caller, but not one whose only caller is itself dead. dead_b is 'called' by the (also dead) dead_a, so only dead_a is reported today."
     candidates = candidates_for(<<~RUBY)
       class Foo
         def entry_point; end

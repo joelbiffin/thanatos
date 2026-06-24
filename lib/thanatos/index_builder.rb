@@ -31,6 +31,7 @@ module Thanatos
       @scope = []
       @visibility = []
       @facts = []
+      @method = []
     end
 
     def visit_class_node(node)
@@ -50,7 +51,9 @@ module Thanatos
       if facts && node.receiver.nil?
         facts.add_definition(name: node.name, visibility: @visibility.last, location: location(node))
       end
+      @method << node.name
       visit_child_nodes(node)
+      @method.pop
     end
 
     def visit_call_node(node)
@@ -94,7 +97,7 @@ module Thanatos
     def visit_alias_method_node(node)
       facts = current
       if facts && node.old_name.is_a?(Prism::SymbolNode)
-        facts.implicit_calls << node.old_name.unescaped.to_sym
+        facts.add_call(@method.last || ClassFacts::CLASS_BODY, node.old_name.unescaped.to_sym)
       end
       super
     end
@@ -138,12 +141,14 @@ module Thanatos
       @scope << fqn
       @visibility << :public
       @facts << facts
+      @method << nil
     end
 
     def leave
       @facts.pop
       @visibility.pop
       @scope.pop
+      @method.pop
     end
 
     def current
@@ -168,6 +173,7 @@ module Thanatos
       @facts << @index.fetch(fqn, nesting: @scope.dup)
       @scope << fqn
       @visibility << :public
+      @method << nil
       visit(node.block)
       leave
     end
@@ -200,12 +206,12 @@ module Thanatos
       original = (node.arguments&.arguments || [])[1]
       return unless original.is_a?(Prism::SymbolNode) || original.is_a?(Prism::StringNode)
 
-      facts.implicit_calls << original.unescaped.to_sym
+      facts.add_call(@method.last || ClassFacts::CLASS_BODY, original.unescaped.to_sym)
     end
 
     def record_call(facts, receiver, name)
       if receiver.nil? || receiver.is_a?(Prism::SelfNode)
-        facts.implicit_calls << name
+        facts.add_call(@method.last || ClassFacts::CLASS_BODY, name)
       else
         facts.explicit_calls << name
       end
@@ -251,7 +257,11 @@ module Thanatos
         facts.add_definition(name: name, visibility: @visibility.last, location: location(node))
       end
 
+      body_method = names.first if node.name == :define_method
+      @method << body_method if body_method
       visit(node.block) if node.block
+      @method.pop if body_method
+
       (node.arguments&.arguments || []).each do |argument|
         visit(argument) unless argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
       end
