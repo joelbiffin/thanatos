@@ -133,4 +133,92 @@ class IndexBuilderTest < Minitest::Test
     assert_equal "M::Base", index["M::Child"].superclass_fqn
     assert_equal ["M::Child"], index.descendants("M::Base").map(&:fqn)
   end
+
+  # attr_reader/writer/accessor and a literal define_method define real methods.
+  def test_attr_macros_and_define_method_are_recorded_as_definitions
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        attr_reader :a
+        attr_accessor :b
+        define_method(:c) { 1 }
+      end
+    RUBY
+
+    assert_equal %i[a b b= c], facts.definitions.map(&:name).sort
+  end
+
+  # `def self.x` and private_class_method live in a separate singleton table.
+  def test_class_methods_are_recorded_in_the_singleton_dimension
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        def instance_m; end
+        def self.build; end
+        private_class_method def self.secret; end
+      end
+    RUBY
+
+    assert_equal [:instance_m], facts.definitions.map(&:name)
+    assert_equal %i[build secret], facts.singleton_definitions.map(&:name).sort
+    visibilities = facts.singleton_definitions.to_h { |d| [d.name, d.visibility] }
+    assert_equal :public, visibilities[:build]
+    assert_equal :private, visibilities[:secret]
+  end
+
+  # A literal send/method selector is a definite call, recorded as such - not a
+  # symbol-literal hint, and not a dynamic-dispatch marker.
+  def test_literal_send_and_method_acquit_as_calls
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        def a
+          send(:helper)
+          method(:other)
+        end
+      end
+    RUBY
+
+    assert_includes facts.implicit_calls, :helper
+    assert_includes facts.implicit_calls, :other
+    refute_includes facts.symbol_literals, :helper
+    refute_includes facts.dynamic_markers, :send
+  end
+
+  # `&:sym` calls sym on each element, not on self, so it is not a usage hint.
+  def test_block_pass_symbol_is_not_a_symbol_literal
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        def a
+          [1].map(&:process)
+        end
+      end
+    RUBY
+
+    refute_includes facts.symbol_literals, :process
+  end
+
+  # include/prepend and extend are recorded for the inheritance graph.
+  def test_include_and_extend_are_recorded_as_constant_refs
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        include Greeting
+        extend Helpers
+      end
+    RUBY
+
+    assert_includes facts.include_refs, [:Greeting]
+    assert_includes facts.extend_refs, [:Helpers]
+  end
+
+  # `Receiver.class_eval { ... }` reopens the receiver, so its defs are the
+  # receiver's.
+  def test_class_eval_reopens_the_receiver_constant
+    index = index_for(<<~RUBY)
+      class Widget; end
+
+      Widget.class_eval do
+        def added; end
+      end
+    RUBY
+
+    assert_includes index["Widget"].definitions.map(&:name), :added
+  end
 end
