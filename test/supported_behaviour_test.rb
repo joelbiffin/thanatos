@@ -1,14 +1,12 @@
 require 'test_helper'
 
-# These tests trace the decidability boundary of the tool. Most now PASS: they
-# were the documented limitations, since implemented, and are kept as executable
-# proof that each decidable case is handled (and as regression cover). The
-# comment above each case describes the gap it closed. Only two remain SKIPPED -
-# public-method and class/module liveness - because they are irreducibly
-# undecidable for a static tool and need a runtime/coverage tier; see
-# docs/undecidable-cases.md.
-class KnownLimitationsTest < Minitest::Test
-  # --- Out of scope by design (a different tier, or solved elsewhere) ---
+# Integration specs for behaviour the tool SUPPORTS. Each runs the full pipeline
+# (parse -> index -> reachability + locals) through candidates_for and asserts
+# the end-to-end result, so this doubles as the catalogue of what works and as
+# regression cover. The cases the tool deliberately does NOT support, and why,
+# live in out_of_scope_test.rb.
+class SupportedBehaviourTest < Minitest::Test
+  # --- Local variables ---
 
   def test_unused_local_variables_are_reported
     candidates = candidates_for(<<~RUBY)
@@ -22,26 +20,7 @@ class KnownLimitationsTest < Minitest::Test
     assert_includes candidate_names(candidates), :unused
   end
 
-  def test_unused_public_methods_are_reported
-    skip "Out of scope: public methods have an open call surface (routes, views, serializers, other gems). Sound detection needs a runtime/coverage tier, not static reachability."
-    candidates = candidates_for(<<~RUBY)
-      class Foo
-        def never_called_anywhere; end
-      end
-    RUBY
-    assert_equal [:never_called_anywhere], candidate_names(candidates)
-  end
-
-  def test_unused_classes_and_modules_are_reported
-    skip "Out of scope: constant (class/module) liveness needs constant-reference tracking and Rails autoload awareness, not method reachability."
-    candidates = candidates_for(<<~RUBY)
-      class NeverInstantiated
-      end
-    RUBY
-    assert_equal ["NeverInstantiated"], candidates.map(&:fqn)
-  end
-
-  # --- Reachability gaps (false positives we knowingly accept for now) ---
+  # --- Inheritance and mixins ---
 
   def test_private_method_from_an_included_module_is_alive
     candidates = candidates_for(<<~RUBY)
@@ -85,7 +64,7 @@ class KnownLimitationsTest < Minitest::Test
     assert_empty candidates
   end
 
-  # --- Definition-tracking gaps (we only see lexical `def`) ---
+  # --- Generated and class methods ---
 
   def test_methods_defined_via_define_method_are_tracked
     candidates = candidates_for(<<~RUBY)
@@ -111,7 +90,7 @@ class KnownLimitationsTest < Minitest::Test
     assert_equal [:secret_helper], candidate_names(candidates)
   end
 
-  # --- Precision gaps (we downgrade where we could be exact) ---
+  # --- Dispatch precision ---
 
   def test_send_with_a_literal_symbol_acquits_rather_than_downgrades
     candidates = candidates_for(<<~RUBY)
@@ -226,7 +205,7 @@ class KnownLimitationsTest < Minitest::Test
     refute_includes facts.definitions.map(&:name), :helper
   end
 
-  # --- Methods we never see, so cannot flag -----------------------------
+  # --- Macro-generated and anonymous-class methods ---
 
   def test_unused_private_attr_reader_is_reported
     candidates = candidates_for(<<~RUBY)

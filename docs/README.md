@@ -40,7 +40,8 @@ wanted **sound** ($S\subseteq\mathrm{Dead}(P)$) and **complete** ($S\supseteq\ma
 ## Classification of all documented limitations
 
 `L` = literal/lexical fragment, `C` = computed fragment. Spec names are the
-`test_*` methods in `test/known_limitations_test.rb`.
+`test_*` methods in `test/supported_behaviour_test.rb` (the decidable rows,
+now passing) and `test/out_of_scope_test.rb` (the two undecidable rows).
 
 | # | Case | Verdict | Proof |
 |---|------|---------|-------|
