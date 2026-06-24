@@ -279,7 +279,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_conditional_visibility_modifier_is_not_applied_unconditionally
-    skip "Imprecision: a guarded visibility modifier (`private if <cond>`) is treated as an unconditional flip; the runtime condition is ignored, so the following def is wrongly marked private."
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         private if false

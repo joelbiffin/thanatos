@@ -108,6 +108,18 @@ module Thanatos
       super
     end
 
+    # Fold an `if` with a literal true/false/nil predicate: only the taken
+    # branch can run, so only it is visited. This keeps a guarded modifier
+    # (`private if false`) or a dead `def` from taking effect. A non-literal
+    # (runtime) predicate is visited normally.
+    def visit_if_node(node)
+      case literal_branch(node.predicate)
+      when :then then visit(node.statements) if node.statements
+      when :else then visit(node.subsequent) if node.subsequent
+      else super
+      end
+    end
+
     private
 
     def enter(node, superclass:)
@@ -131,6 +143,13 @@ module Thanatos
 
     def current
       @facts.last
+    end
+
+    def literal_branch(predicate)
+      case predicate
+      when Prism::TrueNode then :then
+      when Prism::FalseNode, Prism::NilNode then :else
+      end
     end
 
     def anonymous_class_block?(node)
