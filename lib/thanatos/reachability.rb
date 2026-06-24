@@ -2,6 +2,17 @@ module Thanatos
   class Reachability
     NON_PUBLIC = %i[private protected].freeze
 
+    # Methods the Ruby runtime invokes directly - the constructor and the
+    # reflection / lifecycle hooks - never via an explicit call. A defined hook
+    # is reachable, so it seeds reachability like a root (in either dimension).
+    RUNTIME_HOOKS = %i[
+      initialize initialize_copy initialize_clone initialize_dup
+      method_missing respond_to_missing?
+      method_added method_removed singleton_method_added
+      inherited included extended prepended
+      const_missing coerce
+    ].freeze
+
     def initialize(index)
       @index = index
     end
@@ -85,7 +96,7 @@ module Thanatos
     # name-based graph and reach out from the roots.
     def reachable_methods(scope)
       graph = Hash.new { |edges, caller| edges[caller] = Set.new }
-      roots = Set[ClassFacts::CLASS_BODY]
+      roots = Set[ClassFacts::CLASS_BODY, *RUNTIME_HOOKS]
 
       scope.each do |facts, dimension|
         edges_for(facts, dimension).each { |caller, callees| graph[caller].merge(callees) }

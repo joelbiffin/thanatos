@@ -346,7 +346,6 @@ class KnownLimitationsTest < Minitest::Test
   # ======================================================================
 
   def test_initialize_is_a_reachable_root
-    skip "Bug: initialize is the constructor (invoked by .new), so a private initialize - and the helpers it calls - are not dead. 8 false positives in meetcleo."
     candidates = candidates_for(<<~RUBY)
       class Foo
         private
@@ -363,7 +362,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_runtime_hook_methods_are_reachable_roots
-    skip "Bug: method_added / method_missing / respond_to_missing? / inherited / included / extended / prepended / const_missing are invoked by the Ruby runtime, never by an explicit call, so they and their helpers are not dead. Found via ActionOwnership#method_added in meetcleo."
     candidates = candidates_for(<<~RUBY)
       module M
         private
