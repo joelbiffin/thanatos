@@ -120,7 +120,7 @@ class ReachabilityTest < Minitest::Test
         def score; end
       end
 
-      class Caller
+      class Caller < Comparable
         def compare(other); other.score; end
       end
     RUBY
@@ -176,5 +176,27 @@ class ReachabilityTest < Minitest::Test
     RUBY
 
     assert_equal [:helper], candidate_names(candidates)
+  end
+
+  # Protected methods are callable only within the class hierarchy, so an
+  # explicit call from an unrelated class is not a legitimate use and must not
+  # downgrade the finding.
+  def test_protected_method_not_downgraded_by_an_unrelated_explicit_call
+    candidates = candidates_for(<<~RUBY)
+      class Measured
+        protected
+        def score; end
+      end
+
+      class Unrelated
+        def rank(other)
+          other.score
+        end
+      end
+    RUBY
+
+    candidate = candidates.find { |c| c.name == :score }
+    refute_nil candidate
+    assert_equal :high, candidate.confidence
   end
 end

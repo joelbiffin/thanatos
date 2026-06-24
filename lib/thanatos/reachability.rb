@@ -8,12 +8,12 @@ module Thanatos
 
     def candidates
       @index.resolve_inheritance!
-      global_explicit_calls = @index.all.flat_map { |facts| facts.explicit_calls.to_a }.to_set
 
       @index.all.flat_map do |facts|
         hierarchy = [facts, *@index.ancestors(facts.fqn), *@index.descendants(facts.fqn)]
         symbols = union(hierarchy, :symbol_literals)
         markers = union(hierarchy, :dynamic_markers)
+        explicit = union(hierarchy, :explicit_calls)
 
         %i[instance singleton].flat_map do |dimension|
           reachable = reachable_methods(hierarchy, dimension)
@@ -22,7 +22,7 @@ module Thanatos
             next unless NON_PUBLIC.include?(definition.visibility)
             next if reachable.include?(definition.name)
 
-            reasons = reasons_for(definition, symbols:, markers:, global_explicit_calls:)
+            reasons = reasons_for(definition, symbols:, markers:, explicit_calls: explicit)
             Candidate.new(
               fqn: facts.fqn,
               name: definition.name,
@@ -74,7 +74,7 @@ module Thanatos
       reached
     end
 
-    def reasons_for(definition, symbols:, markers:, global_explicit_calls:)
+    def reasons_for(definition, symbols:, markers:, explicit_calls:)
       reasons = []
 
       if symbols.include?(definition.name)
@@ -85,8 +85,8 @@ module Thanatos
         reasons << "class uses dynamic dispatch (#{markers.sort.join(', ')})"
       end
 
-      if definition.visibility == :protected && global_explicit_calls.include?(definition.name)
-        reasons << "explicit call .#{definition.name} found elsewhere (possible protected use)"
+      if definition.visibility == :protected && explicit_calls.include?(definition.name)
+        reasons << "explicit call .#{definition.name} in the hierarchy (possible protected use)"
       end
 
       reasons
