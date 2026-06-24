@@ -9,7 +9,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Out of scope by design (a different tier, or solved elsewhere) ---
 
   def test_unused_local_variables_are_reported
-    skip "Out of scope: local-variable liveness is delegated to `ruby -w` / RuboCop Lint/UselessAssignment, which already do it exactly."
     candidates = candidates_for(<<~RUBY)
       class Foo
         def call

@@ -18,7 +18,11 @@ module BuildHelpers
   end
 
   def candidates_for(source)
-    Thanatos::Reachability.new(index_for(source)).candidates
+    program = Prism.parse(source).value
+    index = Thanatos::Index.new
+    Thanatos::IndexBuilder.new(index, file: "(inline)").visit(program)
+    Thanatos::Reachability.new(index).candidates +
+      Thanatos::LocalVariables.new(file: "(inline)").candidates(program)
   end
 
   def candidate_names(candidates)
