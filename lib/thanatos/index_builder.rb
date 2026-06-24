@@ -106,6 +106,11 @@ module Thanatos
         return
       end
 
+      if class_eval_block?(node)
+        visit_class_eval(node)
+        return
+      end
+
       facts = current
       return visit_child_nodes(node) unless facts
 
@@ -243,6 +248,31 @@ module Thanatos
       push_scope(fqn, @index.fetch(fqn, nesting: @scope.dup))
       visit(node.block)
       leave
+    end
+
+    # `Receiver.class_eval { ... }` / module_eval with a literal constant
+    # receiver reopens that constant; the block is its body. A computed receiver
+    # falls through to the generic path (and stays a dynamic marker).
+    def class_eval_block?(node)
+      node.block.is_a?(Prism::BlockNode) &&
+        %i[class_eval module_eval].include?(node.name) &&
+        (node.receiver.is_a?(Prism::ConstantReadNode) || node.receiver.is_a?(Prism::ConstantPathNode))
+    end
+
+    def visit_class_eval(node)
+      fqn = constant_fqn(node.receiver)
+      push_scope(fqn, @index.fetch(fqn, nesting: @scope.dup))
+      visit(node.block)
+      leave
+    end
+
+    def constant_fqn(node)
+      joined = constant_parts(node).map(&:to_s).join("::")
+      if absolute_constant_path?(node) || @scope.empty?
+        joined
+      else
+        "#{@scope.last}::#{joined}"
+      end
     end
 
     def handle_visibility_modifier(node)

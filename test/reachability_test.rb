@@ -159,4 +159,22 @@ class ReachabilityTest < Minitest::Test
 
     assert_equal [:helper], candidate_names(candidates)
   end
+
+  # `Receiver.class_eval do ... end` (literal receiver) reopens Receiver, so its
+  # defs belong to Receiver and its `private` applies there - not to the
+  # enclosing scope, and not lost when there is no enclosing class.
+  def test_methods_added_via_class_eval_are_attributed_to_the_receiver
+    candidates = candidates_for(<<~RUBY)
+      class Widget
+      end
+
+      Widget.class_eval do
+        private
+
+        def helper; end
+      end
+    RUBY
+
+    assert_equal [:helper], candidate_names(candidates)
+  end
 end
