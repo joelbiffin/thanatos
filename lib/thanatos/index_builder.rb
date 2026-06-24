@@ -19,6 +19,11 @@ module Thanatos
     # dynamic marker).
     ATTR_MACROS = { attr_reader: %i[reader], attr_writer: %i[writer], attr_accessor: %i[reader writer] }.freeze
 
+    # Class.new / Struct.new / Data.define create a NEW anonymous class; a block
+    # passed to them is that class's body, not the enclosing class's. We open a
+    # fresh scope for it so its defs and visibility do not leak outward.
+    ANONYMOUS_CLASS_FACTORIES = { Class: :new, Struct: :new, Data: :define }.freeze
+
     def initialize(index, file:)
       super()
       @index = index
@@ -51,6 +56,11 @@ module Thanatos
     def visit_call_node(node)
       if VISIBILITY_MODIFIERS.include?(node.name) && node.receiver.nil?
         handle_visibility_modifier(node)
+        return
+      end
+
+      if anonymous_class_block?(node)
+        visit_anonymous_class(node)
         return
       end
 
@@ -121,6 +131,21 @@ module Thanatos
 
     def current
       @facts.last
+    end
+
+    def anonymous_class_block?(node)
+      node.block.is_a?(Prism::BlockNode) &&
+        node.receiver.is_a?(Prism::ConstantReadNode) &&
+        ANONYMOUS_CLASS_FACTORIES[node.receiver.name] == node.name
+    end
+
+    def visit_anonymous_class(node)
+      fqn = "(anonymous):#{location(node)}"
+      @facts << @index.fetch(fqn, nesting: @scope.dup)
+      @scope << fqn
+      @visibility << :public
+      visit(node.block)
+      leave
     end
 
     def handle_visibility_modifier(node)

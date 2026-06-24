@@ -205,7 +205,6 @@ class KnownLimitationsTest < Minitest::Test
   # symptoms: a visibility leak AND method misattribution.
 
   def test_private_inside_a_class_defining_block_does_not_leak_out
-    skip "Bug: a `private` inside a Struct.new/Class.new/class_eval block flips the ENCLOSING class's visibility, because visibility resets only on class/module nodes. Here `b` is wrongly recorded as private and so would be reported as a dead private even if it is a used public method."
     facts = facts_for(<<~RUBY, "Outer")
       class Outer
         def a; end
@@ -224,7 +223,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_methods_in_a_class_defining_block_are_not_attributed_to_the_outer_class
-    skip "Bug: a `def` inside a class-defining block is recorded against the enclosing class instead of the anonymous class it belongs to. `helper` here is wrongly attributed to Outer. The same happens for a concern's `class_methods do ... end`."
     facts = facts_for(<<~RUBY, "Outer")
       class Outer
         Thing = Struct.new(:x) do
@@ -249,7 +247,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_methods_defined_inside_an_anonymous_class_are_tracked
-    skip "Not yet: a body introduced via Class.new has no ClassNode, so a plain `def` inside it has no scope to attach to and is invisible. `unused` below is dead but never seen."
     candidates = candidates_for(<<~RUBY)
       Widget = Class.new do
         def call
