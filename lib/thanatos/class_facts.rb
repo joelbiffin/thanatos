@@ -35,7 +35,7 @@ module Thanatos
           visibility: marked,
           location: definition.location
         )
-      end
+      end.reverse.uniq(&:name).reverse
     end
   end
 end

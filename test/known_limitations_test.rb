@@ -298,7 +298,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_a_redefined_method_is_reported_only_once
-    skip "Bug: results are not de-duplicated (the original `.uniq` was dropped), so a method defined twice produces two identical candidates."
     candidates = candidates_for(<<~RUBY)
       class Foo
         private
