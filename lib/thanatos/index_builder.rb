@@ -24,6 +24,12 @@ module Thanatos
     # fresh scope for it so its defs and visibility do not leak outward.
     ANONYMOUS_CLASS_FACTORIES = { Class: :new, Struct: :new, Data: :define }.freeze
 
+    # include/prepend with a literal module constant puts that module in the
+    # includer's ancestry, so the includer's calls can reach the module's
+    # methods (and vice versa). A computed argument is undecidable and falls
+    # through to the generic path.
+    MIXIN_METHODS = %i[include prepend].freeze
+
     def initialize(index, file:)
       super()
       @index = index
@@ -69,6 +75,14 @@ module Thanatos
 
       facts = current
       return visit_child_nodes(node) unless facts
+
+      if MIXIN_METHODS.include?(node.name) && node.receiver.nil?
+        refs = mixin_refs(node)
+        unless refs.empty?
+          refs.each { |ref| facts.add_include(ref) }
+          return
+        end
+      end
 
       defined = definition_macro_names(node)
       unless defined.empty?
@@ -270,6 +284,13 @@ module Thanatos
     def literal_symbol_arguments(node)
       (node.arguments&.arguments || []).filter_map do |argument|
         argument.unescaped.to_sym if argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
+      end
+    end
+
+    def mixin_refs(node)
+      (node.arguments&.arguments || []).filter_map do |argument|
+        parts = constant_parts(argument)
+        parts unless parts.empty?
       end
     end
 

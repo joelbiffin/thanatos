@@ -43,7 +43,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Reachability gaps (false positives we knowingly accept for now) ---
 
   def test_private_method_from_an_included_module_is_alive
-    skip "Not yet: reachability follows superclass inheritance only, not include/prepend. A concern's private method called from its includer is wrongly flagged dead - a significant gap for Rails."
     candidates = candidates_for(<<~RUBY)
       module Greeting
         private

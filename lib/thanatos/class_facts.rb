@@ -5,14 +5,16 @@ module Thanatos
     CLASS_BODY = :"(class body)"
 
     attr_reader :fqn, :nesting, :call_edges, :explicit_calls,
-                :symbol_literals, :dynamic_markers
-    attr_accessor :superclass_ref, :superclass_fqn
+                :symbol_literals, :dynamic_markers, :include_refs
+    attr_accessor :superclass_ref, :superclass_fqn, :include_fqns
 
     def initialize(fqn, nesting: [])
       @fqn = fqn
       @nesting = nesting
       @superclass_ref = nil
       @superclass_fqn = nil
+      @include_refs = []
+      @include_fqns = []
       @definitions = []
       @visibility_marks = {}
       @call_edges = Hash.new { |edges, caller| edges[caller] = Set.new }
@@ -27,6 +29,10 @@ module Thanatos
 
     def add_call(caller, callee)
       @call_edges[caller] << callee
+    end
+
+    def add_include(ref)
+      @include_refs << ref
     end
 
     def mark_visibility(name, visibility)
