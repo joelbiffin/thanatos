@@ -122,6 +122,14 @@ module Thanatos
         end
       end
 
+      if node.name == :extend && node.receiver.nil?
+        refs = extend_refs(node)
+        unless refs.empty?
+          refs.each { |ref| facts.add_extend(ref) }
+          return
+        end
+      end
+
       defined = definition_macro_names(node)
       unless defined.empty?
         handle_definition_macro(node, facts, defined)
@@ -407,6 +415,19 @@ module Thanatos
       (node.arguments&.arguments || []).filter_map do |argument|
         parts = constant_parts(argument)
         parts unless parts.empty?
+      end
+    end
+
+    # `extend self` is common (module-function idiom); the :self sentinel is
+    # resolved to the module's own fqn in resolve_inheritance!.
+    def extend_refs(node)
+      (node.arguments&.arguments || []).filter_map do |argument|
+        if argument.is_a?(Prism::SelfNode)
+          :self
+        else
+          parts = constant_parts(argument)
+          parts unless parts.empty?
+        end
       end
     end
 

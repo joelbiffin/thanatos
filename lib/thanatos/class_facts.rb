@@ -5,8 +5,8 @@ module Thanatos
     CLASS_BODY = :"(class body)"
 
     attr_reader :fqn, :nesting, :call_edges, :singleton_call_edges, :explicit_calls,
-                :symbol_literals, :dynamic_markers, :include_refs
-    attr_accessor :superclass_ref, :superclass_fqn, :include_fqns
+                :symbol_literals, :dynamic_markers, :include_refs, :extend_refs
+    attr_accessor :superclass_ref, :superclass_fqn, :include_fqns, :extend_fqns
 
     def initialize(fqn, nesting: [])
       @fqn = fqn
@@ -15,6 +15,8 @@ module Thanatos
       @superclass_fqn = nil
       @include_refs = []
       @include_fqns = []
+      @extend_refs = []
+      @extend_fqns = []
       @definitions = []
       @singleton_definitions = []
       @visibility_marks = {}
@@ -44,6 +46,10 @@ module Thanatos
 
     def add_include(ref)
       @include_refs << ref
+    end
+
+    def add_extend(ref)
+      @extend_refs << ref
     end
 
     def mark_visibility(name, visibility)

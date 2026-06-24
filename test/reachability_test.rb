@@ -199,4 +199,68 @@ class ReachabilityTest < Minitest::Test
     refute_nil candidate
     assert_equal :high, candidate.confidence
   end
+
+  # `extend M` mixes M's INSTANCE methods into the extender's SINGLETON table, so
+  # a private method of M reached from the extender's class-method context is
+  # alive (a cross-dimension link).
+  def test_method_in_an_extended_module_used_by_a_class_method_is_alive
+    candidates = candidates_for(<<~RUBY)
+      module Helpers
+        private
+
+        def helper; end
+      end
+
+      class Foo
+        extend Helpers
+
+        def self.run
+          helper
+        end
+      end
+    RUBY
+
+    assert_empty candidates
+  end
+
+  # ...but a genuinely-dead method in an extended module is still reported.
+  def test_genuinely_dead_method_in_an_extended_module_is_reported
+    candidates = candidates_for(<<~RUBY)
+      module Helpers
+        private
+
+        def unused_helper; end
+      end
+
+      class Foo
+        extend Helpers
+
+        def self.run
+          something_else
+        end
+      end
+    RUBY
+
+    assert_equal [:unused_helper], candidate_names(candidates)
+  end
+
+  # `extend self`: the module's instance methods are also its singleton methods,
+  # so a public one is a root that keeps its private helpers alive.
+  def test_extend_self_keeps_module_function_helpers_alive
+    candidates = candidates_for(<<~RUBY)
+      module Toolkit
+        extend self
+
+        def run
+          helper
+        end
+
+        private
+
+        def helper; end
+      end
+    RUBY
+
+    assert_empty candidates
+  end
 end

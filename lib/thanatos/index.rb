@@ -20,6 +20,9 @@ module Thanatos
       @facts.each_value do |facts|
         facts.superclass_fqn = resolve(facts.superclass_ref, facts.nesting) if facts.superclass_ref
         facts.include_fqns = facts.include_refs.map { |ref| resolve(ref, facts.nesting) }
+        facts.extend_fqns = facts.extend_refs.map do |ref|
+          ref == :self ? facts.fqn : resolve(ref, facts.nesting)
+        end
       end
     end
 
@@ -34,6 +37,12 @@ module Thanatos
       transitive(fqn) { |name| children[name] }
     end
 
+    # Classes that `extend` the given module: its instance methods are their
+    # class methods, reachable from those classes' singleton context.
+    def extenders(fqn)
+      extenders_map[fqn]
+    end
+
     private
 
     def parents(fqn)
@@ -46,6 +55,12 @@ module Thanatos
     def children
       @children ||= Hash.new { |hash, key| hash[key] = [] }.tap do |map|
         @facts.each_key { |fqn| parents(fqn).each { |parent| map[parent] << fqn } }
+      end
+    end
+
+    def extenders_map
+      @extenders_map ||= Hash.new { |hash, key| hash[key] = [] }.tap do |map|
+        @facts.each_value { |facts| facts.extend_fqns.each { |target| map[target] << facts } }
       end
     end
 
