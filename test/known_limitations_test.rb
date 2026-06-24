@@ -348,7 +348,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Robustness --------------------------------------------------------
 
   def test_parse_errors_are_collected_rather_than_silently_ignored
-    skip "Robustness: Prism is error-tolerant and we never inspect ParseResult#errors, so a syntactically broken file contributes partial facts with no warning. A future version should collect and surface them (e.g. analyzer.parse_errors)."
     analyzer = Thanatos::Analyzer.new(paths: [])
     assert_respond_to analyzer, :parse_errors
   end

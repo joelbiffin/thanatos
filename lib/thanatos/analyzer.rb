@@ -1,15 +1,19 @@
 module Thanatos
   class Analyzer
-    attr_reader :paths
+    attr_reader :paths, :parse_errors
 
     def initialize(paths:)
       @paths = Array(paths).flat_map { |path| expand(path) }.uniq
+      @parse_errors = []
     end
 
     def call
       index = Index.new
       @paths.each do |path|
         result = Prism.parse_file(path)
+        result.errors.each do |error|
+          @parse_errors << "#{path}:#{error.location.start_line}: #{error.message}"
+        end
         IndexBuilder.new(index, file: path).visit(result.value)
       end
       Reachability.new(index).candidates
