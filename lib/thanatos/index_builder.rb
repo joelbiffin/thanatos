@@ -30,6 +30,10 @@ module Thanatos
     # through to the generic path.
     MIXIN_METHODS = %i[include prepend].freeze
 
+    # private_class_method / public_class_method set the visibility of a class
+    # method (def self.x); the instance-level private/protected do not.
+    CLASS_METHOD_VISIBILITY = { private_class_method: :private, public_class_method: :public }.freeze
+
     def initialize(index, file:)
       super()
       @index = index
@@ -69,8 +73,13 @@ module Thanatos
 
     def visit_def_node(node)
       facts = current
-      if facts && node.receiver.nil?
-        facts.add_definition(name: node.name, visibility: @visibility.last, location: location(node))
+      if facts
+        if node.receiver.nil?
+          facts.add_definition(name: node.name, visibility: @visibility.last, location: location(node))
+        elsif node.receiver.is_a?(Prism::SelfNode)
+          # `def self.x` is a class method: public unless private_class_method.
+          facts.add_definition(name: node.name, visibility: :public, location: location(node))
+        end
       end
       @method << node.name
       visit_child_nodes(node)
@@ -80,6 +89,11 @@ module Thanatos
     def visit_call_node(node)
       if VISIBILITY_MODIFIERS.include?(node.name) && node.receiver.nil?
         handle_visibility_modifier(node)
+        return
+      end
+
+      if (visibility = CLASS_METHOD_VISIBILITY[node.name]) && node.receiver.nil?
+        handle_class_method_visibility(node, visibility)
         return
       end
 
@@ -240,6 +254,21 @@ module Thanatos
           facts&.mark_visibility(argument.unescaped.to_sym, node.name)
         when Prism::DefNode
           facts&.mark_visibility(argument.name, node.name)
+          visit_def_node(argument)
+        else
+          visit(argument)
+        end
+      end
+    end
+
+    def handle_class_method_visibility(node, visibility)
+      facts = current
+      (node.arguments&.arguments || []).each do |argument|
+        case argument
+        when Prism::SymbolNode, Prism::StringNode
+          facts&.mark_visibility(argument.unescaped.to_sym, visibility)
+        when Prism::DefNode
+          facts&.mark_visibility(argument.name, visibility)
           visit_def_node(argument)
         else
           visit(argument)

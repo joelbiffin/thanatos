@@ -97,7 +97,6 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   def test_private_class_methods_are_analysed
-    skip "Not yet: only instance-method visibility is modelled. `def self.x` and private_class_method are ignored (def with a receiver is skipped)."
     candidates = candidates_for(<<~RUBY)
       class Foo
         def self.build
