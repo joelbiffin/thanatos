@@ -266,7 +266,6 @@ class KnownLimitationsTest < Minitest::Test
   # --- Constant resolution & parse edges --------------------------------
 
   def test_absolute_constant_path_is_not_rescoped_under_a_module
-    skip "Bug: `class ::Foo` defined inside `module A` is scoped to A::Foo instead of top-level Foo, because the leading `::` is ignored when building the fully-qualified name."
     index = index_for(<<~RUBY)
       module A
         class ::Foo

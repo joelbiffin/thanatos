@@ -56,12 +56,12 @@ module Thanatos
     end
 
     def resolve(parts, nesting)
-      written = parts.map(&:to_s)
-      nesting.length.downto(0) do |depth|
-        candidate = (nesting[0...depth] + written).join("::")
+      written = parts.map(&:to_s).join("::")
+      nesting.reverse_each do |enclosing|
+        candidate = "#{enclosing}::#{written}"
         return candidate if @facts.key?(candidate)
       end
-      written.join("::")
+      written
     end
   end
 end

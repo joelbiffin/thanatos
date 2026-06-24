@@ -123,14 +123,19 @@ module Thanatos
     private
 
     def enter(node, superclass:)
-      parts = constant_parts(node.constant_path).map(&:to_s)
-      fqn = (@scope + [parts.join("::")]).join("::")
+      own = constant_parts(node.constant_path).map(&:to_s).join("::")
+      fqn =
+        if absolute_constant_path?(node.constant_path) || @scope.empty?
+          own
+        else
+          "#{@scope.last}::#{own}"
+        end
       facts = @index.fetch(fqn, nesting: @scope.dup)
 
       reference = constant_parts(superclass)
       facts.superclass_ref = reference unless reference.empty?
 
-      @scope << parts.join("::")
+      @scope << fqn
       @visibility << :public
       @facts << facts
     end
@@ -264,6 +269,13 @@ module Thanatos
       when Prism::ConstantPathNode then constant_parts(node.parent) + [node.name]
       else []
       end
+    end
+
+    # `::Foo` / `::A::Foo` is rooted at the top level: the chain's leftmost
+    # element is a ConstantPathNode with no parent. A relative name bottoms out
+    # at a ConstantReadNode instead.
+    def absolute_constant_path?(node)
+      node.is_a?(Prism::ConstantPathNode) && (node.parent.nil? || absolute_constant_path?(node.parent))
     end
 
     def location(node)
