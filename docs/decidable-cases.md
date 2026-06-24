@@ -157,9 +157,10 @@ scope-stack discipline (§3), or reachability over a finite graph (§4, in P).
 
 $$\textbf{On } L:\quad \mathrm{Dead}(P) \text{ is computable.}$$
 
-None of these is blocked by undecidability. Each unimplemented one is a finite
-amount of engineering, and the roadmap orders them. The wall begins exactly where
-$L$ ends — see [undecidable-cases.md](undecidable-cases.md).
+None of these is blocked by undecidability, and each is now implemented and
+covered by a passing spec (each was, as promised, a finite amount of
+engineering). The wall begins exactly where $L$ ends — see
+[undecidable-cases.md](undecidable-cases.md).
 
 ---
 

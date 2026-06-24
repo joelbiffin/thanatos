@@ -3,19 +3,21 @@
 [Thanatos](https://en.wikipedia.org/wiki/Thanatos) was the Ancient Greeks'
 personification of death — here, put to helpful use.
 
-Thanatos finds **unused private and protected methods** in Ruby code: methods
-that are defined but never called anywhere they legally could be (their class,
-its ancestors, or its subclasses). It is a purely static, deterministic tool —
-it reads your source with [Prism](https://github.com/ruby/prism) and boots
-nothing.
+Thanatos finds **unused private and protected methods**, and **unused local
+variables**, in Ruby code: definitions that are never reached anywhere they
+legally could be — for a method, that is its class, its ancestors and
+subclasses, and any module mixed into them. It is a purely static, deterministic
+tool — it reads your source with [Prism](https://github.com/ruby/prism) and
+boots nothing.
 
 It reports **candidates for deletion, not proof**. Ruby is dynamic, so a method
 that looks unreferenced may still be reached via a callback, `send`, or
 metaprogramming. Thanatos surfaces those uncertain cases too, but flags them as
 low confidence with a reason — see [Output](#output). It deliberately does
-**not** look at public methods, classes/modules, or local variables; the
-boundaries are documented as skipped specs in
-[`test/known_limitations_test.rb`](test/known_limitations_test.rb).
+**not** chase public-method or whole-class/module liveness: their call surface
+is open (routes, views, reflection), which needs a runtime/coverage tier, not
+static analysis. Where that boundary falls — with proofs — is in
+[`docs/`](docs/README.md).
 
 ## Usage
 
@@ -41,9 +43,10 @@ then `bundle exec rake test`. The CLI itself needs only Ruby 3.4+.)
 
 ## Output
 
-Findings are grouped by the constant (class/module) they belong to, then listed
-as one row each: **visibility**, **method name**, **confidence**, and the
-**file:line** where it is defined. A summary line follows.
+Findings are grouped by where they live (the constant for a method, the method
+for a local), then listed as one row each: **visibility** (`private`,
+`protected`, or `local`), **name**, **confidence**, and the **file:line** where
+it is defined. A summary line follows.
 
 ```
 Base
@@ -106,6 +109,7 @@ is confident about, while low-confidence ones stay advisory.
 Treat the list as a worklist, not a verdict. Delete high-confidence findings
 after a quick sanity check; for low-confidence ones, confirm the printed reason
 does not apply before removing anything. And remember the
-[known limitations](test/known_limitations_test.rb): an empty report does not
-mean everything else is used — only that no unused *private or protected*
-methods were found within the analysed paths.
+[boundary](docs/README.md): an empty report does not mean everything else is
+used — only that nothing unused was found among private/protected methods and
+local variables in the analysed paths. Public methods and whole-class liveness
+are out of scope; they need a runtime tier.

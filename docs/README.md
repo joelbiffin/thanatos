@@ -71,8 +71,12 @@ interesting ones. The reductions doc does not contradict the constructive doc â€
 they prove different *fragments* of the same construct. Resolving the `L` fragment
 and abstaining on the `C` fragment is exactly the sound-but-incomplete strategy.
 
-> These notes prove what is and isn't *possible*, not what is *built*. Several
-> "Decidable" rows are still unimplemented; see the prioritised roadmap.
+> **Status.** These notes prove what is *possible*, independent of what is
+> *built* â€” but the gap is now closed. Every row above is implemented on its
+> decidable fragment and covered by a passing spec, including the literal
+> sub-cases of #5 and #17 whose general form stays Undecidable. The only specs
+> still skipped are #2 (public-method liveness) and #3 (class/module liveness):
+> both need a runtime / coverage tier rather than more static analysis.
 
 ---
 

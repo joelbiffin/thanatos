@@ -1,10 +1,12 @@
 require 'test_helper'
 
-# These tests document the deliberate boundaries of this version of the tool.
-# Each one is SKIPPED rather than deleted: the body is an executable spec of
-# behaviour we do not yet provide, and every one would FAIL today if unskipped
-# (so they are honest about the gap, not decorative). Removing a `skip` is the
-# intended first step of implementing that capability.
+# These tests trace the decidability boundary of the tool. Most now PASS: they
+# were the documented limitations, since implemented, and are kept as executable
+# proof that each decidable case is handled (and as regression cover). The
+# comment above each case describes the gap it closed. Only two remain SKIPPED -
+# public-method and class/module liveness - because they are irreducibly
+# undecidable for a static tool and need a runtime/coverage tier; see
+# docs/undecidable-cases.md.
 class KnownLimitationsTest < Minitest::Test
   # --- Out of scope by design (a different tier, or solved elsewhere) ---
 
@@ -127,14 +129,12 @@ class KnownLimitationsTest < Minitest::Test
   end
 
   # ======================================================================
-  # Further gaps found by review. Each behaviour below was confirmed to
-  # reproduce against the current implementation. The tag in every skip
-  # message is deliberate:
-  #   Bug         - wrong output that should be fixed
-  #   Not yet     - a capability we have chosen not to build (yet)
-  #   Out of scope- intentionally another tool's/tier's job
-  #   Imprecision - we answer, but more coarsely than we could
-  #   Robustness  - we can be silently wrong with no warning
+  # Further gaps found by review, since implemented. The tag each carried
+  # during triage (now preserved only in the commit messages):
+  #   Bug         - wrong output, now fixed
+  #   Not yet     - capability we had not built, now built
+  #   Imprecision - coarse answer, now exact
+  #   Robustness  - silent wrongness, now surfaced
   # ======================================================================
 
   # --- Reachability counts ANY caller, not a LIVE caller ----------------
