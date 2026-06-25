@@ -1,9 +1,11 @@
 require 'test_helper'
 
 # The IndexBuilder walks a Prism AST and records, per constant scope, the facts
-# Tier 1 needs: method definitions (with visibility), the calls made, bare symbol
-# literals, and any dynamic-dispatch markers. It does NOT decide what is unused -
-# that is Reachability's job. These tests pin down what the builder observes.
+# Reachability needs: method definitions (instance and class, with visibility),
+# the call graph (which method calls what), bare symbol literals, dynamic-
+# dispatch markers, and superclass / include / extend references. It does NOT
+# decide what is unused - that is Reachability's job. These tests pin down what
+# the builder observes.
 class IndexBuilderTest < Minitest::Test
   def test_partitions_definitions_by_ambient_visibility
     facts = facts_for(<<~RUBY, "Foo")

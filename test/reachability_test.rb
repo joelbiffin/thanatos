@@ -1,11 +1,12 @@
 require 'test_helper'
 
 # Reachability turns an Index into a list of Candidates. The rule for this tier:
-# a private/protected method is a candidate unless it is called (implicitly/via
-# self) somewhere in its class or a descendant. Dynamic signals don't suppress a
-# candidate outright - they downgrade its confidence to :low and explain why -
-# because in a standalone static tool they are the only defence against the
-# false positives that callbacks/send/metaprogramming would otherwise cause.
+# a private/protected method is a candidate unless it is reachable from a root -
+# a public method, the class body, or a Ruby runtime hook - by following calls
+# through its hierarchy (superclass, includes, extends). Dynamic signals don't
+# suppress a candidate outright; they downgrade its confidence to :low and
+# explain why, because in a standalone static tool they are the only defence
+# against the false positives that callbacks/send/metaprogramming would cause.
 class ReachabilityTest < Minitest::Test
   def test_unused_private_method_is_a_high_confidence_candidate
     candidates = candidates_for(<<~RUBY)
@@ -49,8 +50,8 @@ class ReachabilityTest < Minitest::Test
     assert_empty candidates
   end
 
-  # A private method can be invoked from a subclass, so reachability spans the
-  # class plus its descendants.
+  # A private method can be invoked from a subclass, so reachability spans
+  # descendants as well as the class itself (and ancestors, and mixins).
   def test_inherited_private_method_called_from_subclass_is_not_a_candidate
     candidates = candidates_for(<<~RUBY)
       class Base
@@ -110,9 +111,9 @@ class ReachabilityTest < Minitest::Test
     assert_equal :protected, candidates.first.visibility
   end
 
-  # Protected methods are legally callable with an explicit receiver, and we
-  # cannot prove the receiver's type statically, so a matching explicit call
-  # anywhere downgrades rather than confirms.
+  # Protected methods are legally callable with an explicit receiver from within
+  # the hierarchy; we cannot prove the receiver's type, so a matching explicit
+  # call from within the hierarchy downgrades rather than confirms.
   def test_protected_method_with_matching_explicit_call_is_downgraded
     candidates = candidates_for(<<~RUBY)
       class Comparable

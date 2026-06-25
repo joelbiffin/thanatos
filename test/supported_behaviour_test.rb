@@ -108,20 +108,14 @@ class SupportedBehaviourTest < Minitest::Test
   end
 
   # ======================================================================
-  # Further gaps found by review, since implemented. The tag each carried
-  # during triage (now preserved only in the commit messages):
-  #   Bug         - wrong output, now fixed
-  #   Not yet     - capability we had not built, now built
-  #   Imprecision - coarse answer, now exact
-  #   Robustness  - silent wrongness, now surfaced
+  # Cases surfaced by later review (the section above is the original
+  # limitations list). All are now supported.
   # ======================================================================
 
-  # --- Reachability counts ANY caller, not a LIVE caller ----------------
-  # The core check asks "is this method named in a call anywhere in the
-  # hierarchy?" when it should ask "is it reachable from a root (a public
-  # / entry-point method) through the call graph?". Dead code that only
-  # calls itself, or other dead code, therefore hides from us. Fixing this
-  # means building a call graph and marking from roots, not name-matching.
+  # --- Dead clusters and recursion ---
+  # Reachability runs from roots through the call graph, so dead code that only
+  # calls itself (or only other dead code) is still reported: it is never
+  # reached from a live root, even though it has an in-edge.
 
   def test_mutually_recursive_dead_private_methods_are_reported
     candidates = candidates_for(<<~RUBY)
@@ -170,11 +164,10 @@ class SupportedBehaviourTest < Minitest::Test
     assert_equal [:dead_a, :dead_b], candidate_names(candidates)
   end
 
-  # --- Visibility / definitions leak across class-defining blocks -------
-  # Visibility is reset only on class/module NODES, but Struct.new,
-  # Class.new, class_eval and ActiveSupport::Concern's `class_methods do`
-  # / `included do` blocks also change the definee. One root cause, two
-  # symptoms: a visibility leak AND method misattribution.
+  # --- Class-defining blocks get their own scope ---
+  # A Struct.new / Class.new / Data.define block defines a new class, so its
+  # `def`s and `private` stay contained: they neither leak visibility into the
+  # enclosing class nor attribute their methods to it.
 
   def test_private_inside_a_class_defining_block_does_not_leak_out
     facts = facts_for(<<~RUBY, "Outer")
