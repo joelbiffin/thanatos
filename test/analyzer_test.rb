@@ -46,4 +46,21 @@ class AnalyzerTest < Minitest::Test
     assert_includes out.string, "orphan"
     assert_includes out.string, "high-confidence"
   end
+
+  def test_cli_reports_low_confidence_findings_by_default
+    out = StringIO.new
+    Thanatos::CLI.run(["example/mixed_confidence.rb"], out:)
+
+    assert_includes out.string, "orphaned"  # high
+    assert_includes out.string, "guarded"   # low, shown by default
+  end
+
+  # --min-confidence high keeps only the actionable, high-confidence findings.
+  def test_cli_min_confidence_high_filters_out_low_confidence_findings
+    out = StringIO.new
+    Thanatos::CLI.run(["--min-confidence", "high", "example/mixed_confidence.rb"], out:)
+
+    assert_includes out.string, "orphaned"  # high -> kept
+    refute_includes out.string, "guarded"   # low -> filtered out
+  end
 end
