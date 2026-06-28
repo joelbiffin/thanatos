@@ -43,6 +43,7 @@ module Thanatos
       @facts = []
       @method = []
       @singleton_context = []
+      @singleton_class = []
     end
 
     def visit_class_node(node)
@@ -55,6 +56,24 @@ module Thanatos
       enter(node, superclass: nil)
       visit_child_nodes(node)
       leave
+    end
+
+    # `class << self` reopens the current class's singleton class. Give it its
+    # own visibility frame so a `private` there cannot leak into the enclosing
+    # instance methods, and mark the region so its defs land in the singleton
+    # dimension. `class << other` (a specific object's singleton) is left alone.
+    def visit_singleton_class_node(node)
+      return super unless node.expression.is_a?(Prism::SelfNode) && current
+
+      @visibility << :public
+      @method << nil
+      @singleton_context << true
+      @singleton_class << true
+      visit_child_nodes(node)
+      @singleton_class.pop
+      @singleton_context.pop
+      @method.pop
+      @visibility.pop
     end
 
     # `Const = Class.new(Super)` defines a named class via a factory call, with
@@ -74,13 +93,16 @@ module Thanatos
 
     def visit_def_node(node)
       facts = current
-      singleton = node.receiver.is_a?(Prism::SelfNode)
+      explicit_singleton = node.receiver.is_a?(Prism::SelfNode)
+      singleton = explicit_singleton || @singleton_class.last
       if facts
-        if node.receiver.nil?
+        if singleton
+          # A class method: `def self.x` is public by default; a `def` inside
+          # `class << self` takes the singleton class's current visibility.
+          visibility = explicit_singleton ? :public : @visibility.last
+          facts.add_singleton_definition(name: node.name, visibility:, location: location(node))
+        elsif node.receiver.nil?
           facts.add_definition(name: node.name, visibility: @visibility.last, location: location(node))
-        elsif singleton
-          # `def self.x` is a class method: public unless private_class_method.
-          facts.add_singleton_definition(name: node.name, visibility: :public, location: location(node))
         end
       end
       @method << node.name

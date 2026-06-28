@@ -223,4 +223,27 @@ class IndexBuilderTest < Minitest::Test
 
     assert_includes index["Widget"].definitions.map(&:name), :added
   end
+
+  # `class << self` opens the singleton class: its defs are class methods and
+  # its `private` is independent of the enclosing instance visibility.
+  def test_class_self_defines_singleton_methods_without_leaking_visibility
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        class << self
+          private
+
+          def cm; end
+        end
+
+        def run; end
+      end
+    RUBY
+
+    instance = facts.definitions.to_h { |d| [d.name, d.visibility] }
+    singleton = facts.singleton_definitions.to_h { |d| [d.name, d.visibility] }
+
+    assert_equal :public, instance[:run]                  # not leaked to private
+    refute_includes facts.definitions.map(&:name), :cm    # cm is not an instance method
+    assert_equal :private, singleton[:cm]                 # cm is a private class method
+  end
 end

@@ -348,4 +348,29 @@ class SupportedBehaviourTest < Minitest::Test
 
     assert_empty candidates
   end
+
+  # A `private` inside `class << self` sets the visibility of class methods, not
+  # of the enclosing instance methods - so a public instance method after the
+  # block stays a root (found dogfooding meetcleo's ApplicationTool#call).
+  def test_private_inside_class_self_does_not_leak_to_instance_visibility
+    candidates = candidates_for(<<~RUBY)
+      class Foo
+        class << self
+          private
+
+          def cm; end
+        end
+
+        def run
+          helper
+        end
+
+        private
+
+        def helper; end
+      end
+    RUBY
+
+    assert_equal [:cm], candidate_names(candidates)
+  end
 end
