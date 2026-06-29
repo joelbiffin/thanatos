@@ -7,4 +7,5 @@ group :development, :test do
   gem 'minitest'
   gem 'minitest-reporters'
   gem 'rake'
+  gem 'vernier', '~> 1.10'
 end

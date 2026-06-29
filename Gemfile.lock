@@ -37,6 +37,7 @@ GEM
     ruby-progressbar (1.13.0)
     stringio (3.2.0)
     tsort (0.2.0)
+    vernier (1.10.1)
 
 PLATFORMS
   ruby
@@ -48,6 +49,7 @@ DEPENDENCIES
   minitest-reporters
   prism (~> 1.9)
   rake
+  vernier (~> 1.10)
 
 BUNDLED WITH
    2.5.3
