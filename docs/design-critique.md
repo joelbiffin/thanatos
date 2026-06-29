@@ -3,8 +3,8 @@
 A formal design review of the codebase: where the dependencies and load-bearing
 assumptions sit, the weak points, and for each potential change the pros and cons
 of refactoring versus leaving it. The emphasis is deliberately on weaknesses, not
-strengths. References are to the code as it stands on branch `VIBE_cli`
-(through commit `ad20321`). Performance figures (§1, §2.4) come from a `vernier`
+strengths. References are to the code as reviewed on branch `VIBE_cli` (commit
+`ad20321`); §2.1 has since landed (`21c0aa2`) and is marked resolved below. Performance figures (§1, §2.4) come from a `vernier`
 CPU profile of a run over a Rails monolith's `app/` directory and are quoted as
 shares of wall-clock time — no absolute timings, since those vary by machine.
 
@@ -46,35 +46,36 @@ clean CI contract.
 
 ## 2. Weaknesses, with refactor-vs-leave-it for each
 
-### 2.1 `IndexBuilder`'s six hand-balanced stacks — the highest-risk structure
+### 2.1 `IndexBuilder`'s six hand-balanced stacks — RESOLVED (`21c0aa2`)
 
-`@scope`, `@visibility`, `@facts`, `@method`, `@singleton_context`,
-`@singleton_class` must be pushed and popped in lockstep, but the balancing is
-spread across `push_scope`/`leave`, `visit_def_node`, and
-`visit_singleton_class_node` (which manages four of them by hand). The
-`class << self` bug we fixed *was exactly this*: a scope construct that forgot a
-frame. Every future construct (refinements, `instance_eval` with a block,
-pattern-matching binders) is a chance to reintroduce it.
+**What was wrong:** `@scope`, `@visibility`, `@facts`, `@method`,
+`@singleton_context`, and `@singleton_class` had to be pushed and popped in
+lockstep, but the balancing was spread across *four* different combinations
+(`push_scope`/`leave`, `visit_def_node`, `visit_singleton_class_node`, and the
+`define_method` macro). The `class << self` bug was exactly this — a construct
+that forgot a frame.
 
-- **Refactor** (one `@scopes` stack of `Scope` structs bundling
-  fqn/visibility/facts/method/dimension): makes the balance invariant *structural*
-  instead of a manual discipline; the next construct pushes one object or it
-  doesn't compile. Directly prevents the most likely class of future bug.
-- **Leave it:** the six stacks work today and are covered by tests; a refactor
-  touches the most central, most-tested file with no behavioural payoff, and risks
-  introducing the very bug it's meant to prevent.
-- **Call: worth doing** — correctness-of-traversal is the foundation everything
-  else trusts — but only with the current suite green as a harness. It's the one
-  structural refactor I'd actually prioritise.
+**What changed:** the six arrays became one `@scopes` stack of `Scope` value
+objects — a base class with a subclass per kind (`Namespace`, `InstanceMethod`,
+`SingletonMethod`, `SingletonClass`) — so callers read `scope.singleton?` /
+`scope.class_self?` instead of decoding flags. The `Scope` factories (`root`,
+`method_for`, `singleton_class_for`, `define_method_for`) own the rule for which
+kind each construct opens, and a visibility flip is a value replacement
+(`scope.with_visibility`). Every construct pushes and pops exactly one frame, so
+the balance is *structural* — the next scope-like construct adds one factory call
+or it doesn't work at all. Verified behaviour-preserving: full suite green and
+byte-identical output on a Rails monolith's `app/`.
 
 ### 2.2 `ClassFacts` doubles everything by dimension instead of owning a `MethodTable`
 
 Instance and singleton are modelled as parallel fields and parallel methods
 (`add_definition`/`add_singleton_definition`, `call_edges`/`singleton_call_edges`,
 `definitions`/`singleton_definitions`, …), and that doubling leaks outward:
-`Reachability` has `definitions_for`/`edges_for` switches, `IndexBuilder` threads
-`@singleton_context`. The "dimension" is a real concept that exists nowhere as an
-object — and the `extend`-marker asymmetry is a *symptom*: the marker union walks
+`Reachability` has `definitions_for`/`edges_for` switches keyed on a dimension
+symbol, and `ClassFacts` holds two of every table. Since 2.1 the *builder* models
+the dimension as first-class `Scope` kinds (`SingletonMethod` vs `InstanceMethod`),
+but the *fact model* still does not — the "dimension" exists nowhere as an object
+there, and the `extend`-marker asymmetry is a *symptom*: the marker union walks
 one dimension's ancestry but the cross-dimension link lives elsewhere, so it was
 easy to miss.
 
@@ -191,21 +192,22 @@ which couples the *decision* to the *human-readable explanation strings*.
 - **Call: only the strings-as-decision coupling is worth fixing** (separate the
   signal from its sentence); the bluntness is a deliberate, defensible trade.
 
-### 2.7 No regression corpus — refactors fly blind on real input
+### 2.7 No regression corpus — refactors lean on a manual diff
 
 The suite is excellent at *documenting behaviour on snippets* (`candidates_for`
-heredocs), but almost nothing exercises representative Rails code, and the
-dogfooding that found every real bug this session was **manual**. Nothing stops a
-refactor from silently shifting the real-world output — which, for a tool whose
-entire value is the accuracy of that output, is the biggest process gap.
+heredocs), but almost nothing exercises representative Rails code. In practice the
+real-input safety net has been a **manual byte-for-byte diff of the tool's output
+over a Rails monolith's `app/`** before and after a change — used to land both the
+`class << self` fix and the 2.1 refactor. It works, but it's ad hoc and depends on
+a checkout that isn't in the repo.
 
-- **Refactor** (freeze a small fixture app + golden expected-output test): every
-  refactor above gets a safety net that snippet tests can't provide; the
-  `class << self` and `markers` regressions would have been caught automatically.
-- **Leave it:** golden-file tests are brittle and noisy to maintain, and the snippet
-  suite already pins the semantics precisely.
-- **Call: worth it before any of 2.1–2.6** — a golden corpus is the prerequisite
-  that makes the structural refactors safe rather than scary.
+- **Golden fixture corpus** (freeze a small app + expected output): would automate
+  that diff. **Declined by the maintainer** — golden files are brittle and noisy,
+  the snippet suite already pins the semantics, and the manual monolith diff covers
+  the real-input case well enough for a single-maintainer tool.
+- **Call: keep the manual `app/` diff as the real-input check.** Reconsider only if
+  a second maintainer or a behaviour-regression-in-the-wild makes the ad-hoc step
+  too easy to skip.
 
 ### 2.8 Minor smells (flagging, not recommending)
 
@@ -223,24 +225,30 @@ entire value is the accuracy of that output, is the biggest process gap.
 
 ---
 
-## 3. If I could make only three changes
+## 3. The changes I'd make next
 
-1. **A golden regression corpus (2.7)** — the enabler for everything else.
-2. **Collapse the six stacks into one `Scope` object (2.1)** — kills the most likely
-   future bug class.
-3. **Surface unresolved-reference counts (2.5)** — makes the zero-FN promise honest
-   about its own blind spots.
+With **2.1 done** (the `Scope`-frame refactor, `21c0aa2`) and the **golden corpus
+declined** (2.7), the forward priorities are:
 
-Everything else — the dimension `MethodTable`, the idiom registry — I'd **defer**.
-The performance work (2.4) is now measured, not hypothetical: if this graduates to
-a pre-commit/CI step, **incremental parsing (2.4a) is the biggest single lever** —
-it attacks the ~60% of wall-clock spent re-reading unchanged files — with the
-per-class graph rebuild (2.4b) a secondary win; for one-off scans, neither matters.
+1. **Surface unresolved-reference counts (2.5)** — makes the zero-FN promise honest
+   about its own blind spots; the cheapest high-value win.
+2. **Model the common method-defining idioms (2.3)** — `delegate`/`enum`/callbacks;
+   the biggest lever on real-world precision, and the main source of the monolith's
+   noise.
+3. **Decouple confidence from its explanation strings (2.6)** — small, and unblocks
+   tightening individual signals (e.g. the blunt `markers` check) later.
+
+Deferred: the dimension `MethodTable` (2.2), and the performance work (2.4) — now
+measured, so if this graduates to a pre-commit/CI step, **incremental parsing
+(2.4a) is the biggest single lever** (~60% of wall-clock is re-reading unchanged
+files), with the per-class graph rebuild (2.4b) a secondary win; for one-off scans,
+neither matters.
 
 **Honest summary:** the *algorithmic* core is in good shape and the assumptions are
-mostly the right ones for the problem; the debt is concentrated in **traversal
-fragility, an accuracy ceiling from hardcoded idioms, and the absence of a
-real-input safety net** — and the last of those is what I'd fix first. On
-performance, the profile relocates the cost from the tree-traversals the design
-suggests to **re-parsing unchanged files and per-class graph reconstruction** —
-worth attacking only once this is a repeated CI/pre-commit run.
+mostly the right ones. With traversal fragility (2.1) now resolved and the
+real-input check a deliberate manual diff rather than a gap, the remaining debt is
+concentrated in **an accuracy ceiling from hardcoded idioms (2.3)** and **thin
+observability into what the tool couldn't resolve (2.5)** — 2.5 is what I'd do
+first. On performance, the profile relocates the cost from the tree-traversals the
+design suggests to **re-parsing unchanged files and per-class graph
+reconstruction** — worth attacking only once this is a repeated CI/pre-commit run.

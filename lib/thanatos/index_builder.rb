@@ -38,12 +38,7 @@ module Thanatos
       super()
       @index = index
       @file = file
-      @scope = []
-      @visibility = []
-      @facts = []
-      @method = []
-      @singleton_context = []
-      @singleton_class = []
+      @scopes = []
     end
 
     def visit_class_node(node)
@@ -65,15 +60,9 @@ module Thanatos
     def visit_singleton_class_node(node)
       return super unless node.expression.is_a?(Prism::SelfNode) && current
 
-      @visibility << :public
-      @method << nil
-      @singleton_context << true
-      @singleton_class << true
+      @scopes << Scope.singleton_class_for(scope)
       visit_child_nodes(node)
-      @singleton_class.pop
-      @singleton_context.pop
-      @method.pop
-      @visibility.pop
+      @scopes.pop
     end
 
     # `Const = Class.new(Super)` defines a named class via a factory call, with
@@ -92,24 +81,22 @@ module Thanatos
     end
 
     def visit_def_node(node)
-      facts = current
-      explicit_singleton = node.receiver.is_a?(Prism::SelfNode)
-      singleton = explicit_singleton || @singleton_class.last
+      parent = @scopes.last
+      facts = parent&.facts
+      on_self = node.receiver.is_a?(Prism::SelfNode)
+      child = Scope.method_for(parent, name: node.name, on_self:)
       if facts
-        if singleton
-          # A class method: `def self.x` is public by default; a `def` inside
-          # `class << self` takes the singleton class's current visibility.
-          visibility = explicit_singleton ? :public : @visibility.last
-          facts.add_singleton_definition(name: node.name, visibility:, location: location(node))
+        if child.singleton?
+          # `def self.x` is public by default; a `def` inside `class << self`
+          # takes the singleton class's current visibility.
+          facts.add_singleton_definition(name: node.name, visibility: on_self ? :public : parent.visibility, location: location(node))
         elsif node.receiver.nil?
-          facts.add_definition(name: node.name, visibility: @visibility.last, location: location(node))
+          facts.add_definition(name: node.name, visibility: parent.visibility, location: location(node))
         end
       end
-      @method << node.name
-      @singleton_context << singleton
+      @scopes << child
       visit_child_nodes(node)
-      @singleton_context.pop
-      @method.pop
+      @scopes.pop
     end
 
     def visit_call_node(node)
@@ -210,12 +197,12 @@ module Thanatos
     def enter(node, superclass:)
       own = constant_parts(node.constant_path).map(&:to_s).join("::")
       fqn =
-        if absolute_constant_path?(node.constant_path) || @scope.empty?
+        if absolute_constant_path?(node.constant_path) || @scopes.empty?
           own
         else
-          "#{@scope.last}::#{own}"
+          "#{scope.fqn}::#{own}"
         end
-      facts = @index.fetch(fqn, nesting: @scope.dup)
+      facts = @index.fetch(fqn, nesting: nesting)
 
       reference = constant_parts(superclass)
       facts.superclass_ref = reference unless reference.empty?
@@ -224,19 +211,11 @@ module Thanatos
     end
 
     def leave
-      @facts.pop
-      @visibility.pop
-      @scope.pop
-      @method.pop
-      @singleton_context.pop
+      @scopes.pop
     end
 
     def push_scope(fqn, facts)
-      @scope << fqn
-      @visibility << :public
-      @facts << facts
-      @method << nil
-      @singleton_context << false
+      @scopes << Scope.root(fqn:, facts:)
     end
 
     def class_dot_new?(node)
@@ -247,8 +226,8 @@ module Thanatos
 
     def enter_factory_class(write_node, call_node)
       own = write_node.name.to_s
-      fqn = @scope.empty? ? own : "#{@scope.last}::#{own}"
-      facts = @index.fetch(fqn, nesting: @scope.dup)
+      fqn = @scopes.empty? ? own : "#{scope.fqn}::#{own}"
+      facts = @index.fetch(fqn, nesting: nesting)
 
       reference = constant_parts((call_node.arguments&.arguments || []).first)
       facts.superclass_ref = reference unless reference.empty?
@@ -256,8 +235,16 @@ module Thanatos
       push_scope(fqn, facts)
     end
 
+    def scope
+      @scopes.last
+    end
+
     def current
-      @facts.last
+      @scopes.last&.facts
+    end
+
+    def nesting
+      @scopes.map(&:fqn)
     end
 
     def literal_branch(predicate)
@@ -275,7 +262,7 @@ module Thanatos
 
     def visit_anonymous_class(node)
       fqn = "(anonymous):#{location(node)}"
-      push_scope(fqn, @index.fetch(fqn, nesting: @scope.dup))
+      push_scope(fqn, @index.fetch(fqn, nesting: nesting))
       visit(node.block)
       leave
     end
@@ -291,17 +278,17 @@ module Thanatos
 
     def visit_class_eval(node)
       fqn = constant_fqn(node.receiver)
-      push_scope(fqn, @index.fetch(fqn, nesting: @scope.dup))
+      push_scope(fqn, @index.fetch(fqn, nesting: nesting))
       visit(node.block)
       leave
     end
 
     def constant_fqn(node)
       joined = constant_parts(node).map(&:to_s).join("::")
-      if absolute_constant_path?(node) || @scope.empty?
+      if absolute_constant_path?(node) || @scopes.empty?
         joined
       else
-        "#{@scope.last}::#{joined}"
+        "#{scope.fqn}::#{joined}"
       end
     end
 
@@ -310,7 +297,7 @@ module Thanatos
       arguments = node.arguments&.arguments || []
 
       if arguments.empty?
-        @visibility[-1] = node.name if facts
+        @scopes[-1] = scope.with_visibility(node.name) if facts
         return
       end
 
@@ -363,8 +350,8 @@ module Thanatos
     # body of a `def self.x` (or another class-method context) it is a class-
     # method call, so it lands in the singleton graph.
     def record_self_call(facts, callee)
-      caller = @method.last || ClassFacts::CLASS_BODY
-      if @singleton_context.last
+      caller = scope.method_name || ClassFacts::CLASS_BODY
+      if scope.singleton?
         facts.add_singleton_call(caller, callee)
       else
         facts.add_call(caller, callee)
@@ -408,19 +395,13 @@ module Thanatos
 
     def handle_definition_macro(node, facts, names)
       names.each do |name|
-        facts.add_definition(name: name, visibility: @visibility.last, location: location(node))
+        facts.add_definition(name: name, visibility: scope.visibility, location: location(node))
       end
 
       body_method = names.first if node.name == :define_method
-      if body_method
-        @method << body_method
-        @singleton_context << false
-      end
+      @scopes << Scope.define_method_for(scope, name: body_method) if body_method
       visit(node.block) if node.block
-      if body_method
-        @singleton_context.pop
-        @method.pop
-      end
+      @scopes.pop if body_method
 
       (node.arguments&.arguments || []).each do |argument|
         visit(argument) unless argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
