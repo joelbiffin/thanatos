@@ -1,7 +1,6 @@
 require 'test_helper'
 
-# Index owns the inheritance graph. Reachability leans on it to span the right
-# set of classes, so these check the graph directly: ancestry through superclass
+# Index owns the inheritance graph Reachability spans: ancestry through superclass
 # AND includes, the inverse (descendants), and the extend relation.
 class IndexTest < Minitest::Test
   def setup
@@ -21,21 +20,20 @@ class IndexTest < Minitest::Test
     @index.resolve_inheritance!
   end
 
-  def test_resolves_a_superclass_to_its_fully_qualified_name
+  test "resolves a superclass to its fully-qualified name" do
     assert_equal "Base", @index["Child"].superclass_fqn
   end
 
-  def test_ancestors_span_the_superclass_chain_and_included_modules
+  test "ancestors span the superclass chain and included modules" do
     assert_equal ["Base", "Greeting"], @index.ancestors("Child").map(&:fqn).sort
   end
 
-  def test_descendants_cover_both_subclasses_and_includers
+  test "descendants cover both subclasses and includers" do
     assert_includes @index.descendants("Base").map(&:fqn), "Child"      # subclass
     assert_includes @index.descendants("Greeting").map(&:fqn), "Child"  # includer
   end
 
-  def test_extenders_lists_the_classes_that_extend_a_module
-    # `extend self` makes Toolkit an extender of itself.
-    assert_includes @index.extenders("Toolkit").map(&:fqn), "Toolkit"
+  test "extenders lists the classes that extend a module" do
+    assert_includes @index.extenders("Toolkit").map(&:fqn), "Toolkit"   # extend self
   end
 end

@@ -1,13 +1,11 @@
 require 'test_helper'
 
-# The IndexBuilder walks a Prism AST and records, per constant scope, the facts
+# IndexBuilder walks a Prism AST and records, per constant scope, the facts
 # Reachability needs: method definitions (instance and class, with visibility),
-# the call graph (which method calls what), bare symbol literals, dynamic-
-# dispatch markers, and superclass / include / extend references. It does NOT
-# decide what is unused - that is Reachability's job. These tests pin down what
-# the builder observes.
+# the call graph, bare symbol literals, dynamic-dispatch markers, and
+# superclass / include / extend references. It makes no deadness decisions.
 class IndexBuilderTest < Minitest::Test
-  def test_partitions_definitions_by_ambient_visibility
+  test "partitions definitions by ambient visibility" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def a; end
@@ -22,7 +20,7 @@ class IndexBuilderTest < Minitest::Test
     assert_equal({ a: :public, b: :protected, c: :private }, visibilities)
   end
 
-  def test_private_with_symbol_argument_marks_only_that_method
+  test "private with a symbol argument marks only that method" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def a; end
@@ -36,9 +34,7 @@ class IndexBuilderTest < Minitest::Test
     assert_equal :private, visibilities[:b]
   end
 
-  # `private def x` returns the symbol and marks x; it does NOT flip the ambient
-  # visibility, so the following def stays public.
-  def test_inline_private_def_marks_one_method_without_flipping_mode
+  test "private def x marks one method without flipping ambient visibility" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         private def a; end
@@ -52,9 +48,8 @@ class IndexBuilderTest < Minitest::Test
   end
 
   # A symbol passed to a visibility modifier is bookkeeping, not a usage, so it
-  # must not pollute the symbol-literal set (which Reachability treats as a hint
-  # that a method is reached dynamically).
-  def test_symbol_argument_to_modifier_is_not_recorded_as_a_literal
+  # must not pollute the symbol-literal set (a dynamic-reach hint for Reachability).
+  test "a symbol argument to a visibility modifier is not recorded as a literal" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def b; end
@@ -65,7 +60,7 @@ class IndexBuilderTest < Minitest::Test
     refute_includes facts.symbol_literals, :b
   end
 
-  def test_separates_implicit_self_and_explicit_calls
+  test "separates implicit self-calls from explicit-receiver calls" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def a
@@ -82,9 +77,9 @@ class IndexBuilderTest < Minitest::Test
     refute_includes facts.implicit_calls, :external
   end
 
-  # A *computed* selector stays a marker; a literal one now resolves (acquits),
-  # so this uses a variable selector to exercise the dynamic-dispatch path.
-  def test_records_dynamic_dispatch_markers
+  # A literal selector resolves (acquits); a computed one stays a marker, so this
+  # uses a variable selector to exercise the dynamic-dispatch path.
+  test "records a computed selector as a dynamic-dispatch marker" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def a(name); send(name); end
@@ -94,9 +89,9 @@ class IndexBuilderTest < Minitest::Test
     assert_includes facts.dynamic_markers, :send
   end
 
-  # Both alias forms count as a use of the original method: `alias_method` (a
-  # method call) and the `alias` keyword (an AliasMethodNode).
-  def test_an_alias_counts_as_a_use_of_the_original_method
+  # Both alias forms count as a use of the original: `alias_method` (a call) and
+  # the `alias` keyword (an AliasMethodNode).
+  test "an alias counts as a use of the original method" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def original; end
@@ -110,7 +105,7 @@ class IndexBuilderTest < Minitest::Test
     assert_includes facts.implicit_calls, :other
   end
 
-  def test_builds_fully_qualified_names_for_nested_namespaces
+  test "builds fully-qualified names for nested namespaces" do
     index = index_for(<<~RUBY)
       module Outer
         class Inner
@@ -123,7 +118,7 @@ class IndexBuilderTest < Minitest::Test
     assert_equal [:a], index["Outer::Inner"].definitions.map(&:name)
   end
 
-  def test_resolves_a_superclass_within_its_enclosing_namespace
+  test "resolves a superclass within its enclosing namespace" do
     index = index_for(<<~RUBY)
       module M
         class Base; end
@@ -136,8 +131,21 @@ class IndexBuilderTest < Minitest::Test
     assert_equal ["M::Child"], index.descendants("M::Base").map(&:fqn)
   end
 
-  # attr_reader/writer/accessor and a literal define_method define real methods.
-  def test_attr_macros_and_define_method_are_recorded_as_definitions
+  # `::Foo` inside a module is top-level, not rescoped under the module.
+  test "an absolute constant path is not rescoped under a module" do
+    index = index_for(<<~RUBY)
+      module A
+        class ::Foo
+          def a; end
+        end
+      end
+    RUBY
+
+    refute_nil index["Foo"]
+    assert_nil index["A::Foo"]
+  end
+
+  test "attr macros and a literal define_method are recorded as definitions" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         attr_reader :a
@@ -149,8 +157,7 @@ class IndexBuilderTest < Minitest::Test
     assert_equal %i[a b b= c], facts.definitions.map(&:name).sort
   end
 
-  # `def self.x` and private_class_method live in a separate singleton table.
-  def test_class_methods_are_recorded_in_the_singleton_dimension
+  test "class methods are recorded in the singleton dimension" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def instance_m; end
@@ -166,9 +173,9 @@ class IndexBuilderTest < Minitest::Test
     assert_equal :private, visibilities[:secret]
   end
 
-  # A literal send/method selector is a definite call, recorded as such - not a
-  # symbol-literal hint, and not a dynamic-dispatch marker.
-  def test_literal_send_and_method_acquit_as_calls
+  # A literal send/method selector is a definite call - not a symbol-literal hint,
+  # and not a dynamic-dispatch marker.
+  test "a literal send/method selector is recorded as a definite call" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def a
@@ -185,7 +192,7 @@ class IndexBuilderTest < Minitest::Test
   end
 
   # `&:sym` calls sym on each element, not on self, so it is not a usage hint.
-  def test_block_pass_symbol_is_not_a_symbol_literal
+  test "a block-pass symbol is not recorded as a symbol literal" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         def a
@@ -197,8 +204,7 @@ class IndexBuilderTest < Minitest::Test
     refute_includes facts.symbol_literals, :process
   end
 
-  # include/prepend and extend are recorded for the inheritance graph.
-  def test_include_and_extend_are_recorded_as_constant_refs
+  test "include and extend are recorded as constant refs" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         include Greeting
@@ -210,9 +216,7 @@ class IndexBuilderTest < Minitest::Test
     assert_includes facts.extend_refs, [:Helpers]
   end
 
-  # `Receiver.class_eval { ... }` reopens the receiver, so its defs are the
-  # receiver's.
-  def test_class_eval_reopens_the_receiver_constant
+  test "class_eval reopens the receiver constant" do
     index = index_for(<<~RUBY)
       class Widget; end
 
@@ -224,14 +228,58 @@ class IndexBuilderTest < Minitest::Test
     assert_includes index["Widget"].definitions.map(&:name), :added
   end
 
-  # `class << self` opens the singleton class: its defs are class methods and
-  # its `private` is independent of the enclosing instance visibility.
-  def test_class_self_defines_singleton_methods_without_leaking_visibility
+  # A Struct.new / Class.new / Data.define block defines a new class, so its
+  # `def`s and `private` stay contained.
+  test "a private inside a class-defining block does not leak out" do
+    facts = facts_for(<<~RUBY, "Outer")
+      class Outer
+        def a; end
+
+        Thing = Struct.new(:x) do
+          private
+          def helper; end
+        end
+
+        def b; end
+      end
+    RUBY
+
+    assert_equal :public, facts.definitions.to_h { |d| [d.name, d.visibility] }[:b]
+  end
+
+  test "methods in a class-defining block are not attributed to the outer class" do
+    facts = facts_for(<<~RUBY, "Outer")
+      class Outer
+        Thing = Struct.new(:x) do
+          def helper; end
+        end
+      end
+    RUBY
+
+    refute_includes facts.definitions.map(&:name), :helper
+  end
+
+  # A guarded modifier (`private if false`) has a non-literal predicate, so it is
+  # not applied - the following def stays public.
+  test "a conditional visibility modifier is not applied unconditionally" do
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        private if false
+
+        def still_public; end
+      end
+    RUBY
+
+    assert_equal :public, facts.definitions.to_h { |d| [d.name, d.visibility] }[:still_public]
+  end
+
+  # `class << self` opens the singleton class: its defs are class methods and its
+  # `private` is independent of the enclosing instance visibility.
+  test "class self defines singleton methods without leaking visibility" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo
         class << self
           private
-
           def cm; end
         end
 
@@ -242,8 +290,8 @@ class IndexBuilderTest < Minitest::Test
     instance = facts.definitions.to_h { |d| [d.name, d.visibility] }
     singleton = facts.singleton_definitions.to_h { |d| [d.name, d.visibility] }
 
-    assert_equal :public, instance[:run]                  # not leaked to private
-    refute_includes facts.definitions.map(&:name), :cm    # cm is not an instance method
-    assert_equal :private, singleton[:cm]                 # cm is a private class method
+    assert_equal :public, instance[:run]
+    refute_includes facts.definitions.map(&:name), :cm
+    assert_equal :private, singleton[:cm]
   end
 end

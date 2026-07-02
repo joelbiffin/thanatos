@@ -1,17 +1,13 @@
 require 'test_helper'
 require 'stringio'
 
-# End-to-end coverage over real files: the Analyzer expands paths, parses every
-# file into one shared Index (so a class reopened across files is a single
-# scope), and reports candidates. The CLI wraps that with a CI-friendly exit
-# status.
+# End-to-end over real files: Analyzer expands paths, parses every file into one
+# shared Index (so a class reopened across files is a single scope), and reports
+# candidates. The CLI wraps that with a CI-friendly exit status.
 class AnalyzerTest < Minitest::Test
-  def test_inherited_private_method_fixture
-    candidates = Thanatos::Analyzer.new(
-      paths: "example/private_method_from_inherited_class.rb"
-    ).call
+  test "reports the dead private method in a fixture, not the used ones" do
+    candidates = Thanatos::Analyzer.new(paths: "example/private_method_from_inherited_class.rb").call
 
-    # Base#setup is called by Base#perform and Worker#run; Base#orphan never is.
     assert_equal [:orphan], candidate_names(candidates)
     assert_equal "Base", candidates.first.fqn
     assert_equal :high, candidates.first.confidence
@@ -19,26 +15,31 @@ class AnalyzerTest < Minitest::Test
 
   # An override is reachable through a call in its parent (dynamic dispatch), so
   # it must not be reported. Reachability spans ancestors as well as descendants.
-  def test_overridden_private_method_is_not_flagged
+  test "an overridden private method is not flagged" do
     candidates = Thanatos::Analyzer.new(paths: "example/overridden_private_method.rb").call
     assert_empty candidates
   end
 
-  def test_class_reopened_across_files_is_treated_as_one_scope
+  test "a class reopened across files is treated as one scope" do
     candidates = Thanatos::Analyzer.new(paths: "example/multi_file_private_usage").call
     names = candidate_names(candidates)
 
-    # Called from the other file -> alive. Called from nowhere -> dead.
-    assert_includes names, :never_called
-    refute_includes names, :only_used_in_other_file
+    assert_includes names, :never_called            # called nowhere -> dead
+    refute_includes names, :only_used_in_other_file # called from the other file -> alive
   end
 
-  def test_directory_path_expands_to_every_ruby_file
+  test "a directory path expands to every ruby file under it" do
     analyzer = Thanatos::Analyzer.new(paths: "example/multi_file_private_usage")
     assert_operator analyzer.paths.length, :>=, 2
   end
 
-  def test_cli_exits_nonzero_and_reports_when_high_confidence_candidates_exist
+  # A syntax error degrades coverage rather than crashing the run: the errors are
+  # collected for reporting.
+  test "parse errors are collected rather than silently ignored" do
+    assert_respond_to Thanatos::Analyzer.new(paths: []), :parse_errors
+  end
+
+  test "the CLI exits non-zero and reports when high-confidence candidates exist" do
     out = StringIO.new
     status = Thanatos::CLI.run(["example/private_method_from_inherited_class.rb"], out:)
 
@@ -47,7 +48,7 @@ class AnalyzerTest < Minitest::Test
     assert_includes out.string, "high-confidence"
   end
 
-  def test_cli_reports_low_confidence_findings_by_default
+  test "the CLI reports low-confidence findings by default" do
     out = StringIO.new
     Thanatos::CLI.run(["example/mixed_confidence.rb"], out:)
 
@@ -55,8 +56,7 @@ class AnalyzerTest < Minitest::Test
     assert_includes out.string, "guarded"   # low, shown by default
   end
 
-  # --min-confidence high keeps only the actionable, high-confidence findings.
-  def test_cli_min_confidence_high_filters_out_low_confidence_findings
+  test "--min-confidence high filters out low-confidence findings" do
     out = StringIO.new
     Thanatos::CLI.run(["--min-confidence", "high", "example/mixed_confidence.rb"], out:)
 

@@ -1,16 +1,15 @@
 require 'test_helper'
 
 # LocalVariables is a separate lexical pass: per scope, a variable assigned but
-# never read is dead. These pin its rules in isolation - including the ones that
-# keep it sound (closures count as use, eval/binding force abstention) and quiet
-# (underscore-prefixed names are intentional).
+# never read is dead. These pin the rules that keep it sound (closures count as
+# use, eval/binding force abstention) and quiet (underscore names are intentional).
 class LocalVariablesTest < Minitest::Test
   def locals(source)
     program = Prism.parse(source).value
     Thanatos::LocalVariables.new(file: "(inline)").candidates(program).map(&:name)
   end
 
-  def test_assigned_but_unread_local_is_reported
+  test "an assigned but unread local is reported" do
     assert_equal [:unused], locals(<<~RUBY)
       class Foo
         def call
@@ -21,7 +20,7 @@ class LocalVariablesTest < Minitest::Test
     RUBY
   end
 
-  def test_a_local_that_is_read_is_not_reported
+  test "a local that is read is not reported" do
     assert_empty locals(<<~RUBY)
       class Foo
         def call
@@ -33,7 +32,7 @@ class LocalVariablesTest < Minitest::Test
   end
 
   # `depth` resolves a closure's read to the outer scope that owns the variable.
-  def test_a_read_inside_a_closure_counts_as_use
+  test "a read inside a closure counts as use" do
     assert_empty locals(<<~RUBY)
       class Foo
         def call
@@ -45,7 +44,7 @@ class LocalVariablesTest < Minitest::Test
     RUBY
   end
 
-  def test_underscore_prefixed_names_are_ignored
+  test "underscore-prefixed names are ignored" do
     assert_empty locals(<<~RUBY)
       class Foo
         def call
@@ -57,7 +56,7 @@ class LocalVariablesTest < Minitest::Test
   end
 
   # eval/binding could read a local by a name we cannot see, so we abstain.
-  def test_abstains_in_a_scope_that_uses_binding
+  test "abstains in a scope that uses binding" do
     assert_empty locals(<<~RUBY)
       class Foo
         def call
