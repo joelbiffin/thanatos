@@ -16,8 +16,8 @@ metaprogramming. Thanatos surfaces those uncertain cases too, but flags them as
 low confidence with a reason — see [Output](#output). It deliberately does
 **not** chase public-method or whole-class/module liveness: their call surface
 is open (routes, views, reflection), which needs a runtime/coverage tier, not
-static analysis. Where that boundary falls — with proofs — is in
-[`docs/`](docs/README.md).
+static analysis. Where that boundary falls, and why, is in
+[`docs/decidability.md`](docs/decidability.md).
 
 ## Usage
 
@@ -35,6 +35,9 @@ at the code you want to analyse:
 
 # No argument analyses the current directory
 ./exe/thanatos
+
+# Only report high-confidence findings (default is low, i.e. show everything)
+./exe/thanatos ~/code/my-app --min-confidence high
 ```
 
 The path may live in any project — Thanatos analyses whatever Ruby files it
@@ -109,7 +112,27 @@ is confident about, while low-confidence ones stay advisory.
 Treat the list as a worklist, not a verdict. Delete high-confidence findings
 after a quick sanity check; for low-confidence ones, confirm the printed reason
 does not apply before removing anything. And remember the
-[boundary](docs/README.md): an empty report does not mean everything else is
-used — only that nothing unused was found among private/protected methods and
+[boundary](docs/decidability.md): an empty report does not mean everything else
+is used — only that nothing unused was found among private/protected methods and
 local variables in the analysed paths. Public methods and whole-class liveness
 are out of scope; they need a runtime tier.
+
+### Why you might see a false positive
+
+A high-confidence finding is a strong candidate, but on a framework-heavy app a
+few families recur — worth recognising before you delete:
+
+- **Truly dead** — the common case, and the point of the tool (e.g. an
+  `attr_accessor` whose writer is never assigned). Delete it.
+- **Out of architecture** — the caller is outside the analysed paths (a gem base
+  class, a Rails callback), or the framework builds the method name at runtime
+  (`"include_#{assoc}?"`). Widen the scan to include the caller, or leave it: it
+  is the same open call surface as a public method.
+- **A gap in the tool** — a real bug it should fix. Rare, and each becomes a
+  failing test when found.
+
+## Docs
+
+- [architecture.md](docs/architecture.md) — how it works inside.
+- [decidability.md](docs/decidability.md) — what it can and can't decide, and why.
+- [design-critique.md](docs/design-critique.md) — known weaknesses and what's next.

@@ -1,6 +1,6 @@
 module Thanatos
   # Reports a local variable that is assigned but never read in its scope. This
-  # is lexical and decidable (docs/decidable-cases.md, Theorem L): per scope we
+  # is lexical and decidable (see docs/decidability.md): per scope we
   # diff writes against reads. We abstain on a scope that uses eval/binding
   # (the name could be read dynamically) and ignore _-prefixed names, which are
   # conventionally intentional. `depth` resolves a read/write to the scope that

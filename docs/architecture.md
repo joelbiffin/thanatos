@@ -208,7 +208,7 @@ Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `
 - **Confidence** is `:high` unless `reasons_for` finds doubt over the hierarchy: the name appears as a **symbol literal** (callback/`send` hint), the hierarchy contains **any dynamic-dispatch marker** (computed `send` et al.), or a `protected` method has a matching **explicit call**. Otherwise `:low`. *(The marker union walks `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
 
 ### `LocalVariables` — [lib/thanatos/local_variables.rb](../lib/thanatos/local_variables.rb)
-A separate `Prism::Visitor` for a fully **decidable** problem (see [decidable-cases.md](decidable-cases.md), Theorem L).
+A separate `Prism::Visitor` for a fully **decidable** problem (see [decidability.md](decidability.md)).
 **Encoded logic:**
 - One `Frame` per `def` / block / lambda, tracking `writes` and `reads`; emit any write never read.
 - **`depth` resolves a read/write to the owning scope**, so a closure reading an outer local counts as a use.
