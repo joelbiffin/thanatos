@@ -36,4 +36,33 @@ class IndexTest < Minitest::Test
   test "extenders lists the classes that extend a module" do
     assert_includes @index.extenders("Toolkit").map(&:fqn), "Toolkit"   # extend self
   end
+
+  # A node reachable by more than one path is collected once: the traversal
+  # tracks what it has already visited. Without that, the shared ancestor
+  # duplicates on a diamond and, on a cyclic include graph, the walk never ends.
+  test "ancestors collect a diamond's shared ancestor exactly once" do
+    index = index_for(<<~RUBY)
+      module Top; end
+      module Left;  include Top; end
+      module Right; include Top; end
+
+      class Bottom
+        include Left
+        include Right
+      end
+    RUBY
+    index.resolve_inheritance!
+
+    assert_equal ["Left", "Right", "Top"], index.ancestors("Bottom").map(&:fqn).sort
+  end
+
+  test "ancestors terminate on a cyclic include graph" do
+    index = index_for(<<~RUBY)
+      module A; include B; end
+      module B; include A; end
+    RUBY
+    index.resolve_inheritance!
+
+    assert_equal ["A", "B"], index.ancestors("A").map(&:fqn).sort
+  end
 end

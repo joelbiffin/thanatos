@@ -65,15 +65,14 @@ module Thanatos
     end
 
     def transitive(fqn)
-      collected = []
+      collected = Set.new
       queue = yield(fqn).dup
+
       until queue.empty?
         current = queue.shift
-        next if collected.include?(current)
-
-        collected << current
-        queue.concat(yield(current))
+        queue.concat(yield(current)) if collected.add?(current)
       end
+
       collected.filter_map { |name| @facts[name] }
     end
 
