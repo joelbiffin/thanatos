@@ -4,7 +4,7 @@ A formal design review of the codebase: where the dependencies and load-bearing
 assumptions sit, the weak points, and for each potential change the pros and cons
 of refactoring versus leaving it. The emphasis is deliberately on weaknesses, not
 strengths. References are to the code as reviewed on branch `VIBE_cli` (commit
-`ad20321`); §2.1 has since landed (`21c0aa2`) and is marked resolved below. Performance figures (§1, §2.4) come from a `vernier`
+`c73ba20`); §2.1 has since landed (`8484304`) and is marked resolved below. Performance figures (§1, §2.4) come from a `vernier`
 CPU profile of a run over a Rails monolith's `app/` directory and are quoted as
 shares of wall-clock time — no absolute timings, since those vary by machine.
 
@@ -46,7 +46,7 @@ clean CI contract.
 
 ## 2. Weaknesses, with refactor-vs-leave-it for each
 
-### 2.1 `IndexBuilder`'s six hand-balanced stacks — RESOLVED (`21c0aa2`)
+### 2.1 `IndexBuilder`'s six hand-balanced stacks — RESOLVED (`8484304`)
 
 **What was wrong:** `@scope`, `@visibility`, `@facts`, `@method`,
 `@singleton_context`, and `@singleton_class` had to be pushed and popped in
@@ -227,7 +227,7 @@ a checkout that isn't in the repo.
 
 ## 3. The changes I'd make next
 
-With **2.1 done** (the `Scope`-frame refactor, `21c0aa2`) and the **golden corpus
+With **2.1 done** (the `Scope`-frame refactor, `8484304`) and the **golden corpus
 declined** (2.7), the forward priorities are:
 
 1. **Surface unresolved-reference counts (2.5)** — makes the zero-FN promise honest
