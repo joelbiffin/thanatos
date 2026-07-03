@@ -57,18 +57,7 @@ Base
 MyApp
   private   never_called                 high  app/services/my_app.rb:8
 
-<<<<<<< HEAD
-### Testing
-
-The project just uses minitest and the test suite can be run via, `rake` or `rake test`.
-
-To run a specific test method, you can use the `TEST` and `TESTOPTS` environment variables:
-
-````
-rake test TEST='test/thanatos_test.rb' TESTOPTS="--name=test_single_class_method_definitions_and_called_are_stored -v"
-=======
 2 candidate(s), 2 high-confidence.
->>>>>>> 77a7e86 (Rebuild Thanatos as a static dead-method finder)
 ```
 
 When nothing is found:
@@ -130,6 +119,18 @@ few families recur — worth recognising before you delete:
   is the same open call surface as a public method.
 - **A gap in the tool** — a real bug it should fix. Rare, and each becomes a
   failing test when found.
+
+## Testing
+
+The project uses minitest; run the suite with `rake` or `rake test`.
+
+To run a single file or filter by test name, use the `TEST` and `TESTOPTS`
+environment variables:
+
+```sh
+rake test TEST='test/analyzer_test.rb'
+rake test TEST='test/analyzer_test.rb' TESTOPTS="--name=/dead private method/ -v"
+```
 
 ## Docs
 
