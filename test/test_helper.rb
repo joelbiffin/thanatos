@@ -17,11 +17,11 @@ module BuildHelpers
     index_for(source)[fqn]
   end
 
-  def candidates_for(source)
+  def candidates_for(source, plugins: [])
     program = Prism.parse(source).value
     index = Thanatos::Index.new
     Thanatos::IndexBuilder.new(index, file: "(inline)").visit(program)
-    Thanatos::Reachability.new(index).candidates +
+    Thanatos::Reachability.new(index, plugins:).candidates +
       Thanatos::LocalVariables.new(file: "(inline)").candidates(program)
   end
 

@@ -13,18 +13,21 @@ module Thanatos
       const_missing coerce
     ].freeze
 
-    def initialize(index)
+    def initialize(index, plugins: [])
       @index = index
+      @plugins = plugins
     end
 
     def candidates
       @index.resolve_inheritance!
+      apply_plugins!
 
       @index.all.flat_map do |facts|
         hierarchy = [facts, *@index.ancestors(facts.fqn), *@index.descendants(facts.fqn)]
         symbols = union(hierarchy, :symbol_literals)
         markers = union(hierarchy, :dynamic_markers)
         explicit = union(hierarchy, :explicit_calls)
+        plugin_reasons = union_plugin_reasons(hierarchy)
 
         %i[instance singleton].flat_map do |dimension|
           reachable = reachable_methods(contributions(facts, dimension))
@@ -33,7 +36,7 @@ module Thanatos
             next unless NON_PUBLIC.include?(definition.visibility)
             next if reachable.include?(definition.name)
 
-            reasons = reasons_for(definition, symbols:, markers:, explicit_calls: explicit)
+            reasons = reasons_for(definition, symbols:, markers:, explicit_calls: explicit, plugin_reasons:)
             Candidate.new(
               fqn: facts.fqn,
               name: definition.name,
@@ -48,6 +51,24 @@ module Thanatos
     end
 
     private
+
+    def apply_plugins!
+      return if @plugins.empty?
+
+      @index.all.each do |facts|
+        @plugins.each do |plugin|
+          next unless plugin.applies_to?(@index, facts.fqn)
+
+          plugin.reasons_for_class(facts).each { |name, reason| facts.plugin_reasons[name] << reason }
+        end
+      end
+    end
+
+    def union_plugin_reasons(hierarchy)
+      hierarchy.each_with_object(Hash.new { |reasons, name| reasons[name] = [] }) do |facts, merged|
+        facts.plugin_reasons.each { |name, reasons| merged[name].concat(reasons.to_a) }
+      end
+    end
 
     # Instance methods and class (singleton) methods are separate method tables,
     # so reachability runs once per dimension.
@@ -115,7 +136,7 @@ module Thanatos
       reached
     end
 
-    def reasons_for(definition, symbols:, markers:, explicit_calls:)
+    def reasons_for(definition, symbols:, markers:, explicit_calls:, plugin_reasons:)
       reasons = []
 
       if symbols.include?(definition.name)
@@ -130,6 +151,7 @@ module Thanatos
         reasons << "explicit call .#{definition.name} in the hierarchy (possible protected use)"
       end
 
+      reasons.concat(plugin_reasons[definition.name])
       reasons
     end
 

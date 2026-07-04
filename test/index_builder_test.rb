@@ -5,6 +5,28 @@ require 'test_helper'
 # the call graph, bare symbol literals, dynamic-dispatch markers, and
 # superclass / include / extend references. It makes no deadness decisions.
 class IndexBuilderTest < Minitest::Test
+  test "records a receiverless call's symbol arguments as a call site, split by slot" do
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        guard :authenticate, if: :logged_out?, only: %i[show edit]
+      end
+    RUBY
+
+    site = facts.call_sites.find { |call_site| call_site.name == :guard }
+    assert_equal [:authenticate], site.positional
+    assert_equal({ if: [:logged_out?], only: %i[show edit] }, site.kwargs)
+  end
+
+  test "a receiverless call with no symbol arguments records no call site" do
+    facts = facts_for(<<~RUBY, "Foo")
+      class Foo
+        log("started", level: 3)
+      end
+    RUBY
+
+    assert_empty facts.call_sites
+  end
+
   test "partitions definitions by ambient visibility" do
     facts = facts_for(<<~RUBY, "Foo")
       class Foo

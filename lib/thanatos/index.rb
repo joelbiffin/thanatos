@@ -43,7 +43,23 @@ module Thanatos
       extenders_map[fqn]
     end
 
+    def inherits_from?(fqn, base_names)
+      bases = base_names.to_set
+      ancestor_names(fqn).any? { |name| bases.include?(name) }
+    end
+
     private
+
+    def ancestor_names(fqn)
+      [fqn, *ancestors(fqn).map(&:fqn)].each_with_object(Set.new) do |name, names|
+        names << name
+        facts = @facts[name]
+        next unless facts
+
+        names << written(facts.superclass_ref) if facts.superclass_ref
+        facts.include_refs.each { |ref| names << written(ref) }
+      end
+    end
 
     def parents(fqn)
       facts = @facts[fqn]
@@ -77,12 +93,16 @@ module Thanatos
     end
 
     def resolve(parts, nesting)
-      written = parts.map(&:to_s).join("::")
+      name = written(parts)
       nesting.reverse_each do |enclosing|
-        candidate = "#{enclosing}::#{written}"
+        candidate = "#{enclosing}::#{name}"
         return candidate if @facts.key?(candidate)
       end
-      written
+      name
+    end
+
+    def written(parts)
+      parts.map(&:to_s).join("::")
     end
   end
 end

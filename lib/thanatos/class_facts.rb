@@ -5,7 +5,8 @@ module Thanatos
     CLASS_BODY = :"(class body)"
 
     attr_reader :fqn, :nesting, :call_edges, :singleton_call_edges, :explicit_calls,
-                :symbol_literals, :dynamic_markers, :include_refs, :extend_refs
+                :symbol_literals, :dynamic_markers, :include_refs, :extend_refs,
+                :call_sites, :plugin_reasons
     attr_accessor :superclass_ref, :superclass_fqn, :include_fqns, :extend_fqns
 
     def initialize(fqn, nesting: [])
@@ -26,6 +27,12 @@ module Thanatos
       @explicit_calls = Set.new
       @symbol_literals = Set.new
       @dynamic_markers = Set.new
+      @call_sites = []
+      @plugin_reasons = Hash.new { |reasons, name| reasons[name] = Set.new }
+    end
+
+    def add_call_site(name:, positional:, kwargs:)
+      @call_sites << CallSite.new(name:, positional:, kwargs:)
     end
 
     def add_definition(name:, visibility:, location:)
