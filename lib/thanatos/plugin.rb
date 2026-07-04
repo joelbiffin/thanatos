@@ -49,7 +49,7 @@ module Thanatos
 
     def reasons_for_class(facts)
       self.class.macros.each_value.flat_map do |spec|
-        facts.call_sites.select { |site| site.name == spec.name }.flat_map { |site| spec.reasons(site) }
+        facts.signals.call_sites.select { |site| site.name == spec.name }.flat_map { |site| spec.reasons(site) }
       end
     end
   end

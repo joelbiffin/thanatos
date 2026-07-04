@@ -24,8 +24,7 @@ module Thanatos
 
       @index.all.flat_map do |facts|
         hierarchy = [facts, *@index.ancestors(facts.fqn), *@index.descendants(facts.fqn)]
-        symbols = union(hierarchy, :symbol_literals)
-        markers = union(hierarchy, :dynamic_markers)
+        signals = merged_signals(hierarchy)
         explicit = union(hierarchy, :explicit_calls)
         plugin_reasons = union_plugin_reasons(hierarchy)
 
@@ -36,7 +35,7 @@ module Thanatos
             next unless NON_PUBLIC.include?(definition.visibility)
             next if reachable.include?(definition.name)
 
-            reasons = reasons_for(definition, symbols:, markers:, explicit_calls: explicit, plugin_reasons:)
+            reasons = reasons_for(definition, signals:, explicit_calls: explicit, plugin_reasons:)
             Candidate.new(
               fqn: facts.fqn,
               name: definition.name,
@@ -62,6 +61,10 @@ module Thanatos
           plugin.reasons_for_class(facts).each { |name, reason| facts.plugin_reasons[name] << reason }
         end
       end
+    end
+
+    def merged_signals(hierarchy)
+      hierarchy.each_with_object(ReferenceSignals.new) { |facts, merged| merged.merge(facts.signals) }
     end
 
     def union_plugin_reasons(hierarchy)
@@ -136,16 +139,8 @@ module Thanatos
       reached
     end
 
-    def reasons_for(definition, symbols:, markers:, explicit_calls:, plugin_reasons:)
-      reasons = []
-
-      if symbols.include?(definition.name)
-        reasons << "referenced as symbol literal :#{definition.name} (callback/delegate/send?)"
-      end
-
-      if markers.any?
-        reasons << "class uses dynamic dispatch (#{markers.sort.join(', ')})"
-      end
+    def reasons_for(definition, signals:, explicit_calls:, plugin_reasons:)
+      reasons = signals.reasons_for(definition)
 
       if definition.visibility == :protected && explicit_calls.include?(definition.name)
         reasons << "explicit call .#{definition.name} in the hierarchy (possible protected use)"

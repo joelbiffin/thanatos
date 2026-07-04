@@ -12,7 +12,7 @@ class IndexBuilderTest < Minitest::Test
       end
     RUBY
 
-    site = facts.call_sites.find { |call_site| call_site.name == :guard }
+    site = facts.signals.call_sites.find { |call_site| call_site.name == :guard }
     assert_equal [:authenticate], site.positional
     assert_equal({ if: [:logged_out?], only: %i[show edit] }, site.kwargs)
   end
@@ -24,7 +24,7 @@ class IndexBuilderTest < Minitest::Test
       end
     RUBY
 
-    assert_empty facts.call_sites
+    assert_empty facts.signals.call_sites
   end
 
   test "partitions definitions by ambient visibility" do
@@ -79,7 +79,7 @@ class IndexBuilderTest < Minitest::Test
       end
     RUBY
 
-    refute_includes facts.symbol_literals, :b
+    refute_includes facts.signals.symbol_literals, :b
   end
 
   test "separates implicit self-calls from explicit-receiver calls" do
@@ -108,7 +108,7 @@ class IndexBuilderTest < Minitest::Test
       end
     RUBY
 
-    assert_includes facts.dynamic_markers, :send
+    assert_includes facts.signals.dynamic_markers, :send
   end
 
   # Both alias forms count as a use of the original: `alias_method` (a call) and
@@ -209,8 +209,8 @@ class IndexBuilderTest < Minitest::Test
 
     assert_includes facts.implicit_calls, :helper
     assert_includes facts.implicit_calls, :other
-    refute_includes facts.symbol_literals, :helper
-    refute_includes facts.dynamic_markers, :send
+    refute_includes facts.signals.symbol_literals, :helper
+    refute_includes facts.signals.dynamic_markers, :send
   end
 
   # `&:sym` calls sym on each element, not on self, so it is not a usage hint.
@@ -223,7 +223,7 @@ class IndexBuilderTest < Minitest::Test
       end
     RUBY
 
-    refute_includes facts.symbol_literals, :process
+    refute_includes facts.signals.symbol_literals, :process
   end
 
   test "include and extend are recorded as constant refs" do

@@ -154,13 +154,13 @@ module Thanatos
 
       record_call(facts, node.receiver, node.name)
       record_call_site(node, facts) if node.receiver.nil?
-      facts.dynamic_markers << node.name if DYNAMIC_DISPATCH.include?(node.name)
+      facts.signals.record_dynamic_marker(node.name) if DYNAMIC_DISPATCH.include?(node.name)
       record_alias_method(node, facts)
       visit_child_nodes(node)
     end
 
     def visit_symbol_node(node)
-      current&.symbol_literals&.add(node.unescaped.to_sym)
+      current&.signals&.record_symbol_literal(node.unescaped.to_sym)
       super
     end
 
@@ -429,7 +429,7 @@ module Thanatos
 
       return if positional.empty? && kwargs.empty?
 
-      facts.add_call_site(name: node.name, positional:, kwargs:)
+      facts.signals.record_call_site(name: node.name, positional:, kwargs:)
     end
 
     def symbol_values(node)
