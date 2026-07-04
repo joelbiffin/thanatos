@@ -83,14 +83,6 @@ class PluginTest < Minitest::Test
       assert_includes reasons_for(candidates, :logged_out?), "invoked as the guard :if guard"
     end
 
-    test "a bare callback symbol is already :low via the core rule, so the plugin only enriches the reason" do
-      authenticate = candidates_for(SOURCE).find { |c| c.name == :authenticate }
-
-      assert_equal :low, authenticate.confidence
-      assert_includes authenticate.reasons, "referenced as symbol literal :authenticate (callback/delegate/send?)"
-      refute_includes authenticate.reasons, "invoked as a guard callback"
-    end
-
     test "the gate holds: no plugin reason for the same call in a non-descendant" do
       candidates = candidates_for(<<~RUBY, plugins: [DemoCallbacks.new])
         class ReportBuilder

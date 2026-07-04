@@ -20,13 +20,13 @@ remaining ambiguity (dynamic dispatch) is *graded*, never silently resolved.
 ## 1. Pipeline
 
 ```
-paths ─▶ Analyzer ─┬─▶ Prism.parse_file ──▶ IndexBuilder.visit ──▶ Index (ClassFacts…)
-                   │                                                    │
+paths ─▶ Analyzer ─┬─▶ Prism.parse_file ──▶ IndexBuilder.visit ──▶ Index (ClassFacts + ReferenceSignals)
+(+plugins)         │                                                    │
                    └─▶ LocalVariables.candidates                        ▼
                                     │                       Index.resolve_inheritance!
                                     │                                    │
                                     │                                    ▼
-                                    │                        Reachability.candidates
+                                    │                 Reachability: apply_plugins! ▸ candidates
                                     ▼                                    │
                               local Candidates ───────────┬─────────────┘
                                                           ▼
@@ -35,7 +35,10 @@ paths ─▶ Analyzer ─┬─▶ Prism.parse_file ──▶ IndexBuilder.visit
 
 The CLI is the entry point; the `Analyzer` is the orchestrator; the `Index` is the
 shared model; `IndexBuilder`, `Reachability`, and `LocalVariables` are the three
-passes that build it, query it, and run a parallel lexical analysis.
+passes that build it, query it, and run a parallel lexical analysis. Optional
+`Plugin`s ride along: once inheritance is resolved, `Reachability` lets each one
+attach framework-aware reasons to the classes it applies to before grading — the
+detail is in [plugins.md](plugins.md).
 
 ### Sequence
 
@@ -59,8 +62,9 @@ sequenceDiagram
         Analyzer->>LocalVariables: candidates(ast)
         LocalVariables-->>Analyzer: local-var Candidates
     end
-    Analyzer->>Reachability: new(index).candidates
+    Analyzer->>Reachability: new(index, plugins:).candidates
     Reachability->>Index: resolve_inheritance!
+    Reachability->>Reachability: apply_plugins! (gated by Index#inherits_from?)
     Reachability->>Index: ancestors / descendants / extenders
     Reachability-->>Analyzer: method Candidates (graded)
     Analyzer-->>CLI: method + local Candidates
@@ -101,19 +105,39 @@ classDiagram
         +ancestors(fqn)
         +descendants(fqn)
         +extenders(fqn)
+        +inherits_from?(fqn, bases)
     }
     class ClassFacts {
         +fqn
         +call_edges
         +singleton_call_edges
-        +symbol_literals
-        +dynamic_markers
+        +signals
         +explicit_calls
+        +plugin_reasons
         +definitions()
         +singleton_definitions()
     }
+    class ReferenceSignals {
+        +symbol_literals
+        +dynamic_markers
+        +call_sites
+        +merge(other)
+        +reasons_for(definition)
+    }
+    class CallSite {
+        <<Data>>
+        +name
+        +positional
+        +kwargs
+    }
+    class Plugin {
+        +applies_to?(index, fqn)
+        +reasons_for_class(facts)
+    }
     class Reachability {
         +candidates()
+        -apply_plugins!()
+        -merged_signals(hierarchy)
         -reachable_methods(scope)
         -contributions(facts, dim)
         -reasons_for(definition)
@@ -141,6 +165,10 @@ classDiagram
     Reachability ..> Index : queries
     Index "1" o-- "*" ClassFacts
     ClassFacts "1" o-- "*" MethodDefinition
+    ClassFacts "1" o-- "1" ReferenceSignals
+    ReferenceSignals "1" o-- "*" CallSite
+    Reachability ..> Plugin : applies
+    Plugin ..> Index : gates via inherits_from?
     Reachability ..> Candidate : produces
     LocalVariables ..> Candidate : produces
     CLI ..> Candidate : reports
@@ -167,6 +195,7 @@ The require graph and a convenience `Thanatos.analyze(*paths)`. No logic.
 - One shared `Index` across **all** files, so a class reopened across files is a single scope.
 - Parse errors are **collected, not swallowed** (`parse_errors`), so a syntax error degrades coverage rather than crashing the run.
 - Final result = `Reachability` (method) candidates **+** `LocalVariables` (local) candidates.
+- Any `plugins` given to `Analyzer` are handed to `Reachability` (default: none).
 
 ### `IndexBuilder` — [lib/thanatos/index_builder.rb](../lib/thanatos/index_builder.rb)
 A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the AST and records facts into the `Index`; it makes **no deadness decisions**. It carries a single `@scopes` stack of `Scope` value objects, specialised into a subclass per kind — `Namespace`, `InstanceMethod`, `SingletonMethod`, `SingletonClass` — each carrying `fqn`, `facts` (the current `ClassFacts`), `visibility`, and `method_name`, and answering `singleton?` / `class_self?` by kind rather than via flags. The `Scope` factories own which kind a construct opens (`Scope.root` for a namespace; `Scope.method_for` for a `def`, choosing instance vs class method; `Scope.singleton_class_for` for `class << self`; `Scope.define_method_for` for a define_method block). Every construct pushes and pops exactly one frame, so the stack stays balanced by construction; a `private` that flips ambient visibility replaces the frame via `scope.with_visibility(…)` (frames are values, never mutated).
@@ -180,6 +209,7 @@ A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the
 - **Implicit vs explicit calls.** A call with no receiver or `self` receiver is a self-call → it lands in the call graph under the current method (or `CLASS_BODY`), in the current dimension. A call on another receiver lands in `explicit_calls` (used only to spare `protected` methods).
 - **Mixin/ancestry refs.** `include`/`prepend` and `extend` with a literal constant are recorded as references (`extend self` via a `:self` sentinel); computed arguments fall through.
 - **Other usage hints.** `alias`/`alias_method` count as a use of the original; bare `:symbol` literals are recorded (a possible callback/`send` hint), but `&:sym` block-passes are **not** (they call `sym` on elements, not `self`).
+- **Reference signals & call sites.** The symbol literals and dynamic-dispatch markers above, plus every receiverless call carrying literal symbol arguments (a **call site**: the call name + its positional/keyword symbols), are recorded into the class's `ReferenceSignals`. Call sites are the raw material plugins read — IndexBuilder records them but never interprets them.
 
 ### `ClassFacts` — [lib/thanatos/class_facts.rb](../lib/thanatos/class_facts.rb)
 **Responsibility:** the mutable record of one constant (class or module).
@@ -188,6 +218,21 @@ A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the
 - Visibility **marks are applied lazily** in `definitions`/`singleton_definitions`: `resolved` overlays the marks and keeps the **last** definition of a name (`reverse.uniq(&:name).reverse`) so a redefined method is reported once with its final visibility.
 - `CLASS_BODY` is the pseudo-caller for load-time code (a reachability root).
 - `implicit_calls` is derived as the union of all call-edge targets.
+- **Reference signals live in one object.** `symbol_literals`, `dynamic_markers`, and `call_sites` are held by a single `ReferenceSignals` (`signals`), not three fields. `explicit_calls` (protected-sparing) and `plugin_reasons` (added later, by plugins) stay separate — a *definite* call and an *already-rendered* conclusion are not source hints, so they don't belong in the signal model.
+
+### `ReferenceSignals` / `CallSite` — [lib/thanatos/reference_signals.rb](../lib/thanatos/reference_signals.rb), [lib/thanatos/call_site.rb](../lib/thanatos/call_site.rb)
+**Responsibility:** the source hints that a method might be reached in a way plain reachability can't see, and how they render as doubt-reasons.
+**Encoded logic:**
+- Holds `symbol_literals`, `dynamic_markers`, and `call_sites` (a `CallSite` = a receiverless call's name + positional/keyword symbol arguments).
+- `merge` folds a whole hierarchy's signals into one; `reasons_for(definition)` renders the **symbol-literal** then **dynamic-dispatch** reasons (that order is the CI-visible output).
+- It is a *signal* model: it never holds a plugin's already-rendered conclusion — that separation is the point (see [design-critique.md](design-critique.md) §2.6).
+
+### `Plugin` — [lib/thanatos/plugin.rb](../lib/thanatos/plugin.rb)
+**Responsibility:** the framework-awareness extension point (full detail in [plugins.md](plugins.md)).
+**Encoded logic:**
+- `applies_to?(index, fqn)` gates the plugin, optionally to a class hierarchy via `inherits_from` (matched by `Index#inherits_from?`); ungated plugins apply everywhere.
+- `reasons_for_class(facts)` returns `[name, reason]` pairs — usually by declaring `reference_macro`s over a gem's callback DSLs (their symbol arguments become reasons), or by overriding the method for logic the DSL can't express.
+- **Deliberately weak:** a plugin can only attach a reason (downgrade a candidate to `:low`); it can never add call edges, definitions, or roots. So a wrong plugin adds noise but can never hide dead code.
 
 ### `MethodDefinition` / `Candidate` — [lib/thanatos/method_definition.rb](../lib/thanatos/method_definition.rb), [lib/thanatos/candidate.rb](../lib/thanatos/candidate.rb)
 Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and `high_confidence?` for the CLI.
@@ -198,6 +243,7 @@ Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `
 - `resolve_inheritance!` turns name references into FQNs — **must run before reachability**. Constant resolution (`resolve`) is **lexical scope resolution along a scope chain**: it walks the `nesting` innermost→outermost and binds the first *known* constant, else falls back to the written name (a deliberately simple model of Ruby's `Module.nesting` lookup).
 - `ancestors`/`descendants` span **both** the superclass chain and `include`/`prepend` modules, in both directions — either can supply a caller.
 - `extenders_map` powers the `extend` cross-dimension link; `children` is a memoized inverted edge map.
+- `inherits_from?(fqn, bases)` walks the **written** ancestry chain (the superclass + include refs of the class and its in-scope ancestors), so a gem base like `ActionController::Base` still matches when an in-scope link names it. This is how a `Plugin` gates itself to a hierarchy.
 
 ### `Reachability` — [lib/thanatos/reachability.rb](../lib/thanatos/reachability.rb)
 **Responsibility:** decide which non-public methods are dead, and how confident we are.
@@ -205,7 +251,8 @@ Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `
 - **Roots** = `CLASS_BODY` + `RUNTIME_HOOKS` + every public method name in scope. `RUNTIME_HOOKS` (`initialize`, `method_missing`, `inherited`, `coerce`, …) are invoked by the runtime, never by an explicit call, so a defined hook seeds reachability like a root.
 - **A candidate** is a `private`/`protected` method not in the reached set for its dimension.
 - **`contributions`** assembles the `[facts, dimension]` pairs that share a resolution table: same-dimension (the class + ancestors + descendants) plus the **extend cross-links** (a class's singleton table draws on the instance methods of modules it extends, and vice-versa).
-- **Confidence** is `:high` unless `reasons_for` finds doubt over the hierarchy: the name appears as a **symbol literal** (callback/`send` hint), the hierarchy contains **any dynamic-dispatch marker** (computed `send` et al.), or a `protected` method has a matching **explicit call**. Otherwise `:low`. *(The marker union walks `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
+- **Plugins (optional).** `apply_plugins!` runs after `resolve_inheritance!` and before grading: each plugin that `applies_to?` a class attaches reasons to its methods (into `plugin_reasons`). Plugins only *add reasons*, never edges or roots.
+- **Confidence** is `:high` unless `reasons_for` finds doubt over the hierarchy: the merged `ReferenceSignals` raises a reason (a **symbol literal** matching the name, or **any dynamic-dispatch marker** in the hierarchy), a `protected` method has a matching **explicit call**, or a **plugin** attached a reason. Otherwise `:low`. Confidence is still literally `reasons.empty? ? :high : :low`. *(The signal merge walks `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
 
 ### `LocalVariables` — [lib/thanatos/local_variables.rb](../lib/thanatos/local_variables.rb)
 A separate `Prism::Visitor` for a fully **decidable** problem (see [decidability.md](decidability.md)).
@@ -227,7 +274,7 @@ Each step is a standard technique; the table gives its name in the literature an
 | 2 | **Lexical scope resolution along a scope chain** (static-scope name resolution; "innermost-first" lookup) | `Index#resolve` | Bind a constant by walking the enclosing `nesting` innermost→outermost and taking the first *known* match — a simplified model of Ruby's `Module.nesting` lookup. |
 | 3 | **Transitive closure / graph reachability** (worklist BFS) | `Index#transitive` → `ancestors`/`descendants` | Queue + visited-set over parent/child adjacency (parents = superclass ∪ includes; children = the inverted, memoized edge map); the visited set makes diamonds and cycles safe. Deliberately a *set*, not an order — the ordered production cousin is **C3 linearization** (Ruby/Python MRO), which dispatch needs but reachability does not. |
 | 4 | **Call-graph reachability from roots / live-code inclusion** (≈ **mark-and-sweep** mark phase, ≈ bundler **tree-shaking**, ≈ **RTA**, Rapid Type Analysis) | `Reachability#reachable_methods` | Merge the call edges of every `[facts, dimension]` in scope into one adjacency map (`Hash<name, Set<name>>`), seed the queue with the roots, flood-fill. The reached set's non-public complement is the candidate list. Same shape as Go's `deadcode`/RTA, but **name-based** rather than **type-based**, because Ruby is untyped. |
-| 5 | A **fold / reduce** — formally a **join (⊔) over a powerset lattice** in dataflow terms; not a standalone algorithm | `Reachability#union` | Aggregate `symbol_literals` / `dynamic_markers` / `explicit_calls` across the hierarchy into one set for the confidence check. |
+| 5 | A **fold / reduce** — formally a **join (⊔) over a powerset lattice** in dataflow terms; not a standalone algorithm | `Reachability#merged_signals` / `#union` | Fold each class's `ReferenceSignals` (and `explicit_calls`) across the hierarchy into one, for the confidence check. |
 
 **Further reading on these techniques:** call-graph reachability / RTA — [Go's `deadcode` tool](https://go.dev/blog/deadcode) and [`go/callgraph/rta`](https://pkg.go.dev/golang.org/x/tools/go/callgraph/rta); the bundler analogue — [tree-shaking](https://en.wikipedia.org/wiki/Tree_shaking); ordered MRO — [the C3 linearization essay](https://www.python.org/download/releases/2.3/mro/); symbol tables & scope chains — [a symbol-table primer](https://www.geeksforgeeks.org/compiler-design/symbol-table-compiler/) and [Ruslan Spivak's nested-scopes tutorial](https://ruslanspivak.com/lsbasi-part14/); the Visitor pattern over Ruby ASTs — [RuboCop's cops](https://wasabigeek.com/blog/visitor-pattern-in-ruby-rubocop/).
 
@@ -241,3 +288,4 @@ The call graph is deliberately **name-based, not binding-based**: Thanatos never
 - **Reachability from roots**, not "has a caller" — dead clusters and recursion are still reported.
 - **Only a *proof* removes a candidate.** A literal `send(:x)` acquits `x` (it is genuinely called). A mere *hint* of dynamic reach (a computed `send`, a bare symbol) **downgrades to `:low`**, it does not delete the finding — so a real dead method is never silently dropped, only flagged for review.
 - **Scope is the boundary.** Thanatos only knows the files it was given. A caller in a gem, a Rails engine, or a view is "out of architecture" and looks the same as an unused public method — which is why public-method and constant liveness are explicitly [out of scope](../test/out_of_scope_test.rb) for the static tier.
+- **Plugins downgrade, never hide.** A `Plugin` may only attach a reason to a method (dropping it to `:low`); it cannot add call edges, definitions, or roots. So the worst a wrong plugin does is add noise — the zero-false-negative guarantee holds regardless of plugin quality. See [plugins.md](plugins.md).

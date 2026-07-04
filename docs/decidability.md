@@ -13,6 +13,12 @@ So the engineering follows the maths: **implement the lexical fragment; abstain
 on the computed tail** — Thanatos still reports the computed cases, but downgrades
 them to low confidence with a reason rather than claiming them dead.
 
+[Plugins](plugins.md) don't move this boundary. A plugin only makes the *reason*
+on an abstention more precise — "invoked as a `before_action` callback" instead
+of the generic "referenced as a symbol literal" — by encoding what a gem macro
+means. It still downgrades, never claims reachability, so it can't turn an
+undecidable case into a decided one; it just explains the hedge better.
+
 ## Decidable — implemented
 
 | Case | Why it's decidable |
@@ -58,7 +64,9 @@ The decidable rows are exercised end-to-end in
 [`test/behaviour_test.rb`](../test/behaviour_test.rb) (and at the unit level in
 [`test/index_builder_test.rb`](../test/index_builder_test.rb)). The two
 undecidable rows kept as executable-but-skipped boundary markers are in
-[`test/out_of_scope_test.rb`](../test/out_of_scope_test.rb).
+[`test/out_of_scope_test.rb`](../test/out_of_scope_test.rb). How a plugin refines
+the *reason* on an abstention (without moving the boundary) is in
+[`test/plugin_test.rb`](../test/plugin_test.rb).
 
 ## Further reading
 

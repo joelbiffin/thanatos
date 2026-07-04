@@ -84,8 +84,9 @@ PaymentsController
 ```
 
 Common reasons: a matching symbol literal (likely a `before_action`/`delegate`/
-`send` target), `send`/`define_method`/`method_missing` present in the class, or
-a matching explicit call for a protected method.
+`send` target), `send`/`define_method`/`method_missing` present in the class, a
+matching explicit call for a protected method, or a [plugin](#plugins)
+recognising a framework macro that reaches the method.
 
 ### Exit code
 
@@ -120,6 +121,22 @@ few families recur — worth recognising before you delete:
 - **A gap in the tool** — a real bug it should fix. Rare, and each becomes a
   failing test when found.
 
+## Plugins
+
+Thanatos only sees the files you point it at, so a private method reached by a
+gem macro — a `before_action` callback, a `delegate` target — looks unreferenced
+even though the framework calls it. A **plugin** teaches Thanatos what such a
+macro means, so instead of a blunt low-confidence hedge the finding carries a
+specific reason (`↳ invoked as a before_action callback`). Codebases with their
+own DSLs can write a plugin for them and keep the benefit of Thanatos on their
+own stack.
+
+Plugins are deliberately weak — they can only **attach a reason** (which
+downgrades a finding to `low`), never mark a method reachable — so a wrong plugin
+adds noise but can never hide dead code. No plugins ship by default. The full
+authoring guide, the ancestry gate, and the assumptions are in
+[`docs/plugins.md`](docs/plugins.md).
+
 ## Testing
 
 The project uses minitest; run the suite with `rake` or `rake test`.
@@ -136,4 +153,5 @@ rake test TEST='test/analyzer_test.rb' TESTOPTS="--name=/dead private method/ -v
 
 - [architecture.md](docs/architecture.md) — how it works inside.
 - [decidability.md](docs/decidability.md) — what it can and can't decide, and why.
+- [plugins.md](docs/plugins.md) — teaching Thanatos about gem macros, and how to write a plugin.
 - [design-critique.md](docs/design-critique.md) — known weaknesses and what's next.
