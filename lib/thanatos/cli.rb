@@ -11,11 +11,14 @@ module Thanatos
     def initialize(argv, out: $stdout)
       @out = out
       @min_confidence = :low
+      @plugin_files = []
       @paths = parse(argv)
     end
 
     def run
-      candidates = Analyzer.new(paths: @paths).call.select { |candidate| meets_min_confidence?(candidate) }
+      @plugin_files.each { |file| require File.expand_path(file) }
+      candidates = Analyzer.new(paths: @paths, plugins: Thanatos.configuration.plugins).call
+                           .select { |candidate| meets_min_confidence?(candidate) }
       report(candidates)
       candidates.any?(&:high_confidence?) ? 1 : 0
     end
@@ -27,6 +30,10 @@ module Thanatos
         opts.on("--min-confidence LEVEL", %w[low high],
                 "Only report candidates at this confidence or higher (low|high; default low)") do |level|
           @min_confidence = level.to_sym
+        end
+        opts.on("--plugins FILE1,FILE2", Array,
+                "Ruby files that register plugins via Thanatos.configure") do |files|
+          @plugin_files.concat(files)
         end
       end.parse(argv)
 

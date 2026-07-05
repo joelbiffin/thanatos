@@ -153,13 +153,14 @@ module Thanatos
       end
 
       record_call(facts, node.receiver, node.name)
-      facts.dynamic_markers << node.name if DYNAMIC_DISPATCH.include?(node.name)
+      record_call_site(node, facts) if node.receiver.nil?
+      facts.signals.record_dynamic_marker(node.name) if DYNAMIC_DISPATCH.include?(node.name)
       record_alias_method(node, facts)
       visit_child_nodes(node)
     end
 
     def visit_symbol_node(node)
-      current&.symbol_literals&.add(node.unescaped.to_sym)
+      current&.signals&.record_symbol_literal(node.unescaped.to_sym)
       super
     end
 
@@ -405,6 +406,42 @@ module Thanatos
 
       (node.arguments&.arguments || []).each do |argument|
         visit(argument) unless argument.is_a?(Prism::SymbolNode) || argument.is_a?(Prism::StringNode)
+      end
+    end
+
+    def record_call_site(node, facts)
+      positional = []
+      kwargs = {}
+
+      (node.arguments&.arguments || []).each do |argument|
+        case argument
+        when Prism::SymbolNode
+          positional << argument.unescaped.to_sym
+        when Prism::KeywordHashNode, Prism::HashNode
+          argument.elements.each do |assoc|
+            next unless assoc.is_a?(Prism::AssocNode) && assoc.key.is_a?(Prism::SymbolNode)
+
+            symbols = symbol_values(assoc.value)
+            kwargs[assoc.key.unescaped.to_sym] = symbols unless symbols.empty?
+          end
+        end
+      end
+
+      return if positional.empty? && kwargs.empty?
+
+      facts.signals.record_call_site(name: node.name, positional:, kwargs:)
+    end
+
+    def symbol_values(node)
+      case node
+      when Prism::SymbolNode
+        [node.unescaped.to_sym]
+      when Prism::ArrayNode
+        node.elements
+          .select { |element| element.is_a?(Prism::SymbolNode) }
+          .map { |element| element.unescaped.to_sym }
+      else
+        []
       end
     end
 

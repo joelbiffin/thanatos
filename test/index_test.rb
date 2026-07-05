@@ -37,6 +37,28 @@ class IndexTest < Minitest::Test
     assert_includes @index.extenders("Toolkit").map(&:fqn), "Toolkit"   # extend self
   end
 
+  test "inherits_from? is true for a descendant of a named base" do
+    assert @index.inherits_from?("Child", ["Base"])
+  end
+
+  test "inherits_from? matches through an included module" do
+    assert @index.inherits_from?("Child", ["Greeting"])
+  end
+
+  test "inherits_from? is false for an unrelated class" do
+    refute @index.inherits_from?("Base", ["Greeting"])
+  end
+
+  test "inherits_from? matches an out-of-scope base named only by an in-scope link" do
+    index = index_for(<<~RUBY)
+      class ApplicationController < ActionController::Base; end
+      class PostsController < ApplicationController; end
+    RUBY
+    index.resolve_inheritance!
+
+    assert index.inherits_from?("PostsController", ["ActionController::Base"])
+  end
+
   # A node reachable by more than one path is collected once: the traversal
   # tracks what it has already visited. Without that, the shared ancestor
   # duplicates on a diamond and, on a cyclic include graph, the walk never ends.

@@ -110,6 +110,18 @@ this. The assumption "the list is small and stable" is false for Rails.
   ceiling** — and if you ever push this at the monolith for real, `delegate`/`enum`/
   callbacks are the first things to add (as constants, not a framework).
 
+**Update (`0822889`, `fab9318`) — extension point added, PARTIALLY.** There is now
+a [plugin system](../docs/plugins.md): a plugin can teach Thanatos a gem macro's
+meaning and attach a precise reason. Two caveats keep this "partial". First,
+plugins are **reasons-only** — they *downgrade* a callback-reached method with a
+better reason, but they do **not** define methods, so the other half of this
+weakness (a method that exists only via `delegate` looks *undefined*) is still
+unaddressed by design (defining methods would let a plugin manufacture false
+negatives). Second, no plugins ship and there's no `Gemfile.lock` auto-loading
+yet — the hardcoded idiom tables in `IndexBuilder` are untouched. So the accuracy
+*ceiling* is unchanged; what's new is a safe, per-codebase way to explain the
+framework-reached hedges.
+
 ### 2.4 Performance: the redundant work is re-parsing and per-class graph rebuilds (measured)
 
 A `vernier` profile of a run over a Rails monolith's `app/` directory locates the
@@ -191,6 +203,20 @@ which couples the *decision* to the *human-readable explanation strings*.
   but predictable" has real value.
 - **Call: only the strings-as-decision coupling is worth fixing** (separate the
   signal from its sentence); the bluntness is a deliberate, defensible trade.
+
+**Update (`fab9318`) — partially addressed.** `symbol_literals`, `dynamic_markers`,
+and `call_sites` are now one [`ReferenceSignals`](../lib/thanatos/reference_signals.rb)
+that owns both the signals *and* how they render as reasons — so the "compute
+structured signals, render strings separately" split has landed, and `Reachability`
+no longer assembles reason strings inline. `plugin_reasons` (a plugin's rendered
+conclusion) and `explicit_calls` (a definite call gated on `:protected`) were
+deliberately kept **out** of the model — a signal is not a conclusion, and folding
+them back would re-mix the two (the signal-vs-conclusion boundary). What is **not**
+fixed: confidence is still literally `reasons.empty? ? :high : :low`, so the
+*verdict* remains coupled to the presence of explanation strings, and the signals
+are still coarse (`markers.any?` name-agnostic, symbol-literal hierarchy-wide). The
+model now makes tightening those a local change, but the tightening itself is
+future work.
 
 ### 2.7 No regression corpus — refactors lean on a manual diff
 
