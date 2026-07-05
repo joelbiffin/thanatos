@@ -38,6 +38,9 @@ at the code you want to analyse:
 
 # Only report high-confidence findings (default is low, i.e. show everything)
 ./exe/thanatos ~/code/my-app --min-confidence high
+
+# Load plugins that teach Thanatos about your gems' macros (see Plugins below)
+./exe/thanatos ~/code/my-app --plugins config/thanatos_plugins.rb
 ```
 
 The path may live in any project — Thanatos analyses whatever Ruby files it
@@ -131,11 +134,15 @@ specific reason (`↳ invoked as a before_action callback`). Codebases with thei
 own DSLs can write a plugin for them and keep the benefit of Thanatos on their
 own stack.
 
+You **register** a plugin by pointing `--plugins` at the Ruby file that defines
+it (`--plugins a.rb,b.rb` for several); the file's `Thanatos::Plugin` subclasses
+are loaded and applied. No plugins ship by default, and there is no
+auto-discovery — if you don't pass `--plugins`, nothing changes.
+
 Plugins are deliberately weak — they can only **attach a reason** (which
 downgrades a finding to `low`), never mark a method reachable — so a wrong plugin
-adds noise but can never hide dead code. No plugins ship by default. The full
-authoring guide, the ancestry gate, and the assumptions are in
-[`docs/plugins.md`](docs/plugins.md).
+adds noise but can never hide dead code. The full authoring guide, the ancestry
+gate, and the assumptions are in [`docs/plugins.md`](docs/plugins.md).
 
 ## Testing
 

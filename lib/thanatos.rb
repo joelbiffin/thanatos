@@ -18,7 +18,7 @@ require_relative "thanatos/cli"
 module Thanatos
   VERSION = "0.1.0"
 
-  def self.analyze(*paths)
-    Analyzer.new(paths: paths).call
+  def self.analyze(*paths, plugins: [])
+    Analyzer.new(paths: paths, plugins:).call
   end
 end

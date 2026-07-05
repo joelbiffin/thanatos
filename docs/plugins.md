@@ -97,6 +97,31 @@ Omit `inherits_from` for a genuinely universal idiom. `delegate` is
 `Module#delegate` — available on every object, tied to no base class — so its
 plugin should be ungated and fire everywhere.
 
+## Registering a plugin
+
+There is no auto-discovery. You register a plugin by pointing `--plugins` at the
+Ruby file(s) that define it:
+
+```sh
+./exe/thanatos app --plugins config/thanatos_plugins.rb
+# several, comma-separated:
+./exe/thanatos app --plugins config/controllers.rb,config/jobs.rb
+```
+
+Each file is `require`d, and the `Thanatos::Plugin` subclasses it defines
+(registered the moment they're defined) are instantiated and applied to the run.
+The file can assume Thanatos is already loaded, so `class MyPlugin <
+Thanatos::Plugin` just works — no `require` at the top of your plugin file. If
+you don't pass `--plugins`, no plugins run and output is unchanged.
+
+Driving the library directly instead of the CLI:
+
+```ruby
+Thanatos.analyze("app", plugins: [MyPlugin.new])
+# or, for the full candidate list:
+Thanatos::Analyzer.new(paths: ["app"], plugins: [MyPlugin.new]).call
+```
+
 ## Assumptions a callback plugin makes
 
 Worth knowing, because they're where a plugin's reasons can be wrong. Most fail
@@ -133,3 +158,5 @@ layered on afterward — the boundary is discussed in
   signal model the plugin call-site data lives in.
 - [test/index_test.rb](../test/index_test.rb) — `inherits_from?` and the
   written-chain gate.
+- [test/cli_test.rb](../test/cli_test.rb) — `--plugins` loading a file and
+  applying its plugin end-to-end.

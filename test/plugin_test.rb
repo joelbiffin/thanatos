@@ -10,6 +10,13 @@ class PluginTest < Minitest::Test
       default_kwarg: "referenced in %{macro} %{key}:"
   end
 
+  class Registry < Minitest::Test
+    test "subclasses register themselves so the CLI can load them via --plugins" do
+      klass = Class.new(Thanatos::Plugin)
+      assert_includes Thanatos::Plugin::REGISTRY, klass
+    end
+  end
+
   class Gating < Minitest::Test
     test "a plugin with no inherits_from applies to every class" do
       plugin = Class.new(Thanatos::Plugin).new

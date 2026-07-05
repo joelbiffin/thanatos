@@ -1,5 +1,12 @@
 module Thanatos
   class Plugin
+    REGISTRY = []
+
+    def self.inherited(subclass)
+      super
+      REGISTRY << subclass
+    end
+
     MacroSpec = Data.define(:name, :positional, :kwargs, :default_kwarg) do
       def reasons(site)
         reasons = []
