@@ -61,4 +61,30 @@ class CliTest < Minitest::Test
     refute_includes out.string, "loaded via --plugins"
     refute_includes out.string, "should not appear"
   end
+
+  ACQUIT_PLUGIN = <<~RUBY
+    class MachinePlugin < Thanatos::Plugin
+      inherits_from "Machine"
+      invokes :guarded, kwargs: %i[unless]
+    end
+    Thanatos.configure { |c| c.register_plugin(MachinePlugin) }
+  RUBY
+
+  ACQUIT_TARGET = <<~RUBY
+    class Machine; end
+    class Account < Machine
+      guarded unless: :barable?
+      def call; end
+      private
+      def barable?; end
+    end
+  RUBY
+
+  test "--show-acquittals lists methods a plugin acquitted, with the count in the summary" do
+    out = StringIO.new
+    Thanatos::CLI.run([write_ruby(ACQUIT_TARGET), "--plugins", write_ruby(ACQUIT_PLUGIN), "--show-acquittals"], out:)
+
+    assert_includes out.string, "acquitted"
+    assert_includes out.string, "barable?"
+  end
 end

@@ -19,9 +19,29 @@ module Thanatos
       end
     end
 
+    InvokeSpec = Data.define(:name, :positional, :kwargs) do
+      def invocations(site)
+        invoked = []
+        invoked.concat(site.positional) if positional
+        site.kwargs.each { |key, symbols| invoked.concat(symbols) if kwargs.include?(key) }
+        invoked.map { |symbol| [symbol, name] }
+      end
+    end
+
     class << self
       def inherits_from(*names)
         @base_names = base_names + names.map { |name| name.to_s.delete_prefix("::") }
+      end
+
+      def invokes(*names, positional: true, kwargs: [])
+        specs = names.to_h do |name|
+          [name.to_sym, InvokeSpec.new(name: name.to_sym, positional:, kwargs: kwargs.map(&:to_sym))]
+        end
+        @invoke_specs = invoke_specs.merge(specs)
+      end
+
+      def invoke_specs
+        @invoke_specs || {}
       end
 
       def base_names
@@ -50,6 +70,12 @@ module Thanatos
     def reasons_for_class(facts)
       self.class.macros.each_value.flat_map do |spec|
         facts.signals.call_sites.select { |site| site.name == spec.name }.flat_map { |site| spec.reasons(site) }
+      end
+    end
+
+    def invocations_for_class(facts)
+      self.class.invoke_specs.each_value.flat_map do |spec|
+        facts.signals.call_sites.select { |site| site.name == spec.name }.flat_map { |site| spec.invocations(site) }
       end
     end
   end

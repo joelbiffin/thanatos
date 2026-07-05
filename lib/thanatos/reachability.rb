@@ -19,26 +19,52 @@ module Thanatos
     end
 
     def candidates
+      compute
+      @candidates
+    end
+
+    def acquittals
+      compute
+      @acquittals
+    end
+
+    private
+
+    def compute
+      return if @computed
+
       @index.resolve_inheritance!
       apply_plugins!
+      @candidates = []
+      @acquittals = []
 
-      @index.all.flat_map do |facts|
+      @index.all.each do |facts|
         hierarchy = [facts, *@index.ancestors(facts.fqn), *@index.descendants(facts.fqn)]
         signals = merged_signals(hierarchy)
         explicit = union(hierarchy, :explicit_calls)
         plugin_reasons = union_plugin_reasons(hierarchy)
 
-        %i[instance singleton].flat_map do |dimension|
-          reachable = reachable_methods(contributions(facts, dimension))
+        %i[instance singleton].each do |dimension|
+          scope = contributions(facts, dimension)
+          acquitted = acquitted_in(scope)
+          reached_real = reachable_methods(scope)
+          reached = acquitted.empty? ? reached_real : reachable_methods(scope, acquitted.keys)
 
-          definitions_for(facts, dimension).filter_map do |definition|
+          definitions_for(facts, dimension).each do |definition|
             next unless NON_PUBLIC.include?(definition.visibility)
-            next if reachable.include?(definition.name)
+
+            name = definition.name
+            if reached.include?(name)
+              next unless acquitted.key?(name) && !reached_real.include?(name)
+
+              @acquittals << Acquittal.new(fqn: facts.fqn, name:, location: definition.location, sources: acquitted[name].uniq)
+              next
+            end
 
             reasons = reasons_for(definition, signals:, explicit_calls: explicit, plugin_reasons:)
-            Candidate.new(
+            @candidates << Candidate.new(
               fqn: facts.fqn,
-              name: definition.name,
+              name:,
               visibility: definition.visibility,
               location: definition.location,
               confidence: reasons.empty? ? :high : :low,
@@ -47,9 +73,9 @@ module Thanatos
           end
         end
       end
-    end
 
-    private
+      @computed = true
+    end
 
     def apply_plugins!
       return if @plugins.empty?
@@ -59,7 +85,18 @@ module Thanatos
           next unless plugin.applies_to?(@index, facts.fqn)
 
           plugin.reasons_for_class(facts).each { |name, reason| facts.plugin_reasons[name] << reason }
+          plugin.invocations_for_class(facts).each { |name, macro| facts.acquittals[name] << "#{plugin_label(plugin)} via #{macro}" }
         end
+      end
+    end
+
+    def plugin_label(plugin)
+      plugin.class.name || plugin.class.to_s
+    end
+
+    def acquitted_in(scope)
+      scope.map(&:first).uniq.each_with_object(Hash.new { |sources, name| sources[name] = [] }) do |facts, merged|
+        facts.acquittals.each { |name, sources| merged[name].concat(sources.to_a) }
       end
     end
 
@@ -118,9 +155,9 @@ module Thanatos
     # `scope` is a list of [facts, dimension] pairs whose methods share one
     # resolution table; we merge their call edges and public methods into one
     # name-based graph and reach out from the roots.
-    def reachable_methods(scope)
+    def reachable_methods(scope, extra_roots = [])
       graph = Hash.new { |edges, caller| edges[caller] = Set.new }
-      roots = Set[ClassFacts::CLASS_BODY, *RUNTIME_HOOKS]
+      roots = Set[ClassFacts::CLASS_BODY, *RUNTIME_HOOKS, *extra_roots]
 
       scope.each do |facts, dimension|
         edges_for(facts, dimension).each { |caller, callees| graph[caller].merge(callees) }

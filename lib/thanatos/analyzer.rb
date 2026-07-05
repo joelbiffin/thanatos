@@ -1,11 +1,12 @@
 module Thanatos
   class Analyzer
-    attr_reader :paths, :parse_errors
+    attr_reader :paths, :parse_errors, :acquittals
 
     def initialize(paths:, plugins: [])
       @paths = Array(paths).flat_map { |path| expand(path) }.uniq
       @parse_errors = []
       @plugins = plugins
+      @acquittals = []
     end
 
     def call
@@ -19,7 +20,10 @@ module Thanatos
         IndexBuilder.new(index, file: path).visit(result.value)
         locals.concat(LocalVariables.new(file: path).candidates(result.value))
       end
-      Reachability.new(index, plugins: @plugins).candidates + locals
+      reachability = Reachability.new(index, plugins: @plugins)
+      candidates = reachability.candidates
+      @acquittals = reachability.acquittals
+      candidates + locals
     end
 
     private
