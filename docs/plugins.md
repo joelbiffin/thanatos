@@ -119,7 +119,17 @@ Thanatos.analyze("app")   # applies the configured plugins
 ```
 
 From the CLI, `--plugins` loads Ruby files that are expected to call
-`configure`:
+`configure`. A complete file defines the plugin *and* registers it:
+
+```ruby
+# config/thanatos.rb
+class ControllerCallbacks < Thanatos::Plugin
+  inherits_from "ApplicationController"
+  reference_macro :before_action, positional: "invoked as a %{macro} callback"
+end
+
+Thanatos.configure { |config| config.register_plugin(ControllerCallbacks) }
+```
 
 ```sh
 ./exe/thanatos app --plugins config/thanatos.rb
@@ -127,9 +137,10 @@ From the CLI, `--plugins` loads Ruby files that are expected to call
 ./exe/thanatos app --plugins config/controllers.rb,config/jobs.rb
 ```
 
-Each file is `require`d (it can assume Thanatos is already loaded), and the
-plugins it registers are applied. There is no auto-discovery: a subclass that is
-defined but never registered is inert, and with no `--plugins` nothing changes.
+Each file is `require`d (it can assume Thanatos is already loaded, so no
+`require` at the top), and the plugins it registers are applied. There is no
+auto-discovery: a subclass that is defined but never registered is inert, and
+with no `--plugins` nothing changes.
 
 ## Assumptions a callback plugin makes
 
