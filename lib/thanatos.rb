@@ -2,6 +2,7 @@ require "prism"
 require "set"
 
 require_relative "thanatos/method_definition"
+require_relative "thanatos/configuration"
 require_relative "thanatos/candidate"
 require_relative "thanatos/call_site"
 require_relative "thanatos/reference_signals"
@@ -18,7 +19,15 @@ require_relative "thanatos/cli"
 module Thanatos
   VERSION = "0.1.0"
 
-  def self.analyze(*paths, plugins: [])
+  def self.configuration
+    @configuration ||= Configuration.new
+  end
+
+  def self.configure
+    yield configuration
+  end
+
+  def self.analyze(*paths, plugins: configuration.plugins)
     Analyzer.new(paths: paths, plugins:).call
   end
 end

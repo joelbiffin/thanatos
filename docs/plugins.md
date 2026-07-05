@@ -99,28 +99,37 @@ plugin should be ungated and fire everywhere.
 
 ## Registering a plugin
 
-There is no auto-discovery. You register a plugin by pointing `--plugins` at the
-Ruby file(s) that define it:
+Registration is explicit — defining a `Thanatos::Plugin` subclass does nothing
+on its own; you opt it in via `Thanatos.configure`:
+
+```ruby
+Thanatos.configure do |config|
+  config.register_plugin(MyControllerPlugin)   # a class (instantiated for you)
+  config.register_plugin(MyJobPlugin.new)      # or an already-built instance
+end
+```
+
+This is the natural path when embedding Thanatos as a gem: configure once (e.g.
+in an initializer or a rake task), then `Thanatos.analyze("app")` picks the
+plugins up.
+
+```ruby
+Thanatos.configure { |c| c.register_plugin(MyControllerPlugin) }
+Thanatos.analyze("app")   # applies the configured plugins
+```
+
+From the CLI, `--plugins` loads Ruby files that are expected to call
+`configure`:
 
 ```sh
-./exe/thanatos app --plugins config/thanatos_plugins.rb
+./exe/thanatos app --plugins config/thanatos.rb
 # several, comma-separated:
 ./exe/thanatos app --plugins config/controllers.rb,config/jobs.rb
 ```
 
-Each file is `require`d, and the `Thanatos::Plugin` subclasses it defines
-(registered the moment they're defined) are instantiated and applied to the run.
-The file can assume Thanatos is already loaded, so `class MyPlugin <
-Thanatos::Plugin` just works — no `require` at the top of your plugin file. If
-you don't pass `--plugins`, no plugins run and output is unchanged.
-
-Driving the library directly instead of the CLI:
-
-```ruby
-Thanatos.analyze("app", plugins: [MyPlugin.new])
-# or, for the full candidate list:
-Thanatos::Analyzer.new(paths: ["app"], plugins: [MyPlugin.new]).call
-```
+Each file is `require`d (it can assume Thanatos is already loaded), and the
+plugins it registers are applied. There is no auto-discovery: a subclass that is
+defined but never registered is inert, and with no `--plugins` nothing changes.
 
 ## Assumptions a callback plugin makes
 

@@ -39,8 +39,8 @@ at the code you want to analyse:
 # Only report high-confidence findings (default is low, i.e. show everything)
 ./exe/thanatos ~/code/my-app --min-confidence high
 
-# Load plugins that teach Thanatos about your gems' macros (see Plugins below)
-./exe/thanatos ~/code/my-app --plugins config/thanatos_plugins.rb
+# Load Ruby files that register plugins via Thanatos.configure (see Plugins below)
+./exe/thanatos ~/code/my-app --plugins config/thanatos.rb
 ```
 
 The path may live in any project — Thanatos analyses whatever Ruby files it
@@ -134,10 +134,17 @@ specific reason (`↳ invoked as a before_action callback`). Codebases with thei
 own DSLs can write a plugin for them and keep the benefit of Thanatos on their
 own stack.
 
-You **register** a plugin by pointing `--plugins` at the Ruby file that defines
-it (`--plugins a.rb,b.rb` for several); the file's `Thanatos::Plugin` subclasses
-are loaded and applied. No plugins ship by default, and there is no
-auto-discovery — if you don't pass `--plugins`, nothing changes.
+You **register** plugins in Ruby via `Thanatos.configure` — natural when
+embedding Thanatos as a gem:
+
+```ruby
+Thanatos.configure { |config| config.register_plugin(MyControllerPlugin) }
+```
+
+From the CLI, `--plugins a.rb,b.rb` loads Ruby files that are expected to call
+`configure`. Defining a `Thanatos::Plugin` subclass does nothing on its own —
+only registering it does. No plugins ship by default, and with no `--plugins`
+nothing changes.
 
 Plugins are deliberately weak — they can only **attach a reason** (which
 downgrades a finding to `low`), never mark a method reachable — so a wrong plugin

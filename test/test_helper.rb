@@ -33,6 +33,12 @@ end
 class Minitest::Test
   include BuildHelpers
 
+  # Configuration is a global singleton; keep tests independent of each other.
+  def before_setup
+    super
+    Thanatos.configuration.reset!
+  end
+
   # A readable-description test macro (like ActiveSupport::TestCase.test, but
   # self-defined so we take no dependency): `test "does the thing" do ... end`.
   # The description is the spec, so most tests need no comment.

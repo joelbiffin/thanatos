@@ -185,9 +185,15 @@ The require graph and a convenience `Thanatos.analyze(*paths)`. No logic.
 **Responsibility:** turn `argv` into a run and an exit status.
 **Encoded logic:**
 - `--min-confidence low|high` (default `low`) parsed with `OptionParser`; ranks via `CONFIDENCE_RANK` and keeps candidates at or above the threshold.
-- `--plugins a.rb,b.rb` `require`s each file and instantiates the `Thanatos::Plugin` subclasses it defines (via the delta over `Plugin::REGISTRY`), then hands them to the `Analyzer`. No `--plugins` → no plugins, output unchanged. See [plugins.md](plugins.md).
+- `--plugins a.rb,b.rb` `require`s each file (expected to call `Thanatos.configure`), then hands `Thanatos.configuration.plugins` to the `Analyzer`. No `--plugins` → no configured plugins, output unchanged. See [plugins.md](plugins.md).
 - Output is grouped by FQN, sorted, with each candidate's `reasons` printed beneath it.
 - **Exit code is the CI contract:** `1` if any *surviving* candidate is high-confidence, else `0`.
+
+### `Configuration` — [lib/thanatos/configuration.rb](../lib/thanatos/configuration.rb)
+**Responsibility:** the explicit registry of plugins an embedding app opts in.
+**Encoded logic:**
+- `Thanatos.configure { |c| c.register_plugin(P) }` appends to the global `Thanatos.configuration`; `register_plugin` accepts a class (instantiated) or an instance.
+- The entry points read it: `Thanatos.analyze` and the CLI default their plugin list to `Thanatos.configuration.plugins`. Registration is explicit — defining a `Plugin` subclass does nothing until it's registered.
 
 ### `Analyzer` — [lib/thanatos/analyzer.rb](../lib/thanatos/analyzer.rb)
 **Responsibility:** expand paths, parse, and drive the two analyses into one candidate list.

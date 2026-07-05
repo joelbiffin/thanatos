@@ -16,7 +16,8 @@ module Thanatos
     end
 
     def run
-      candidates = Analyzer.new(paths: @paths, plugins: load_plugins).call
+      @plugin_files.each { |file| require File.expand_path(file) }
+      candidates = Analyzer.new(paths: @paths, plugins: Thanatos.configuration.plugins).call
                            .select { |candidate| meets_min_confidence?(candidate) }
       report(candidates)
       candidates.any?(&:high_confidence?) ? 1 : 0
@@ -31,20 +32,12 @@ module Thanatos
           @min_confidence = level.to_sym
         end
         opts.on("--plugins FILE1,FILE2", Array,
-                "Ruby files defining Thanatos::Plugin subclasses to load and apply") do |files|
+                "Ruby files that register plugins via Thanatos.configure") do |files|
           @plugin_files.concat(files)
         end
       end.parse(argv)
 
       paths.empty? ? ["."] : paths
-    end
-
-    def load_plugins
-      return [] if @plugin_files.empty?
-
-      before = Plugin::REGISTRY.dup
-      @plugin_files.each { |file| require File.expand_path(file) }
-      (Plugin::REGISTRY - before).map(&:new)
     end
 
     def meets_min_confidence?(candidate)
