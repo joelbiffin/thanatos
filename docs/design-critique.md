@@ -215,8 +215,9 @@ deliberately kept **out** of the model — a signal is not a conclusion, and fol
 them back would re-mix the two (the signal-vs-conclusion boundary).
 
 **Follow-up (plugin confidence levers) — the coupling is gone and the marker
-signal is tightened.** `Reachability#grade` now decides confidence explicitly
-(three-way: `high`/`medium`/`low`), so the *verdict* is no longer `reasons.empty?`
+signal is tightened.** A dedicated `Grader` (extracted from `Reachability`) now
+decides confidence explicitly (three-way: `high`/`medium`/`low`), so the *verdict*
+is no longer `reasons.empty?`
 — a plugin-vouched `medium` carries a provenance string without that string
 forcing `:low`. And the blunt `markers.any?` is replaced by per-method resolution:
 a plugin can *account for* a dynamic construct (declare what it reaches), so a

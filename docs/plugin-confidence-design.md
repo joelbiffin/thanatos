@@ -118,9 +118,12 @@ For a candidate `m` over its hierarchy:
    per class, confidence set explicitly (three-way, `medium` inert), the marker
    reason moved into `Reachability`. Behaviour-preserving.
 3. **Account + `medium` grade (done).** `accounts_for_dispatch`/`account_for`,
-   `markers_verdict` producing `:medium` with provenance, the CLI medium count.
+   marker resolution producing `:medium` with provenance, the CLI medium count.
    The one step that changes output toward promotion; the no-plugin path stays
    byte-identical, the reclaim behaviour is pinned by unit tests.
+4. **Extract grading into `Grader` (done, review follow-up).** Confidence and its
+   reasons move out of `Reachability` into a `Grader` that decides from structure
+   rather than `reasons.empty?`; `Reach` raises on an unknown spec. Byte-identical.
 
 The regression net throughout is a byte-identical check of the no-plugin path
 against a pinned snapshot of a real Rails codebase; the with-plugin behaviour is

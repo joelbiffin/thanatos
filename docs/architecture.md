@@ -147,8 +147,11 @@ classDiagram
         -reachable_methods(scope, extra_roots)
         -acquitted_in(scope)
         -contributions(facts, dim)
-        -grade(definition)
-        -markers_verdict(hierarchy, definition)
+    }
+    class Grader {
+        +grade(definition)
+        -doubt_reasons(definition, markers)
+        -resolve_markers(definition)
     }
     class MethodDefinition {
         <<Data>>
@@ -184,6 +187,7 @@ classDiagram
     ClassFacts "1" o-- "1" ReferenceSignals
     ReferenceSignals "1" o-- "*" CallSite
     Reachability ..> Plugin : applies
+    Reachability ..> Grader : delegates grading
     Plugin ..> Index : gates via inherits_from?
     Reachability ..> Candidate : produces
     Reachability ..> Acquittal : produces
@@ -262,7 +266,7 @@ A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the
 - **Three levers, three failure modes.** A wrong reason only adds noise; a wrong `invokes` *hides* a dead method (a false negative), which is why acquittals are always reported (`Reachability#acquittals`); a wrong account *promotes* a method to `:medium`, which is bounded because `:medium` never gates CI and names the plugin that vouched. No plugin action is invisible.
 
 ### `MethodDefinition` / `Candidate` / `Acquittal` — [lib/thanatos/method_definition.rb](../lib/thanatos/method_definition.rb), [lib/thanatos/candidate.rb](../lib/thanatos/candidate.rb), [lib/thanatos/acquittal.rb](../lib/thanatos/acquittal.rb)
-Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and owns the confidence vocabulary: `meets?(minimum)` (the ordinal threshold over `Candidate::LEVELS`, `low < medium < high`) and `gating?` (the top, build-failing level). Keeping the ordering here means the CLI holds no confidence table. `Acquittal` records a method a plugin removed from the list — `fqn`, `name`, `location`, and `sources` (which plugin/macro vouched) — for the audit report. `Reach` ([lib/thanatos/reach.rb](../lib/thanatos/reach.rb)) wraps an account's reach spec and answers `reaches?(name)`; a `DispatchAccount` pairs one with the vouching plugin's label.
+Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and owns the confidence vocabulary: `meets?(minimum)` (the ordinal threshold over `Candidate::LEVELS`, `low < medium < high`) and `gating?` (the top, build-failing level). Keeping the ordering here means the CLI holds no confidence table. `Acquittal` records a method a plugin removed from the list — `fqn`, `name`, `location`, and `sources` (which plugin/macro vouched) — for the audit report. `Reach` ([lib/thanatos/reach.rb](../lib/thanatos/reach.rb)) wraps an account's reach spec (`:public`/`:none`, a `Regexp`, or a name list) and answers `reaches?(name)`, raising on an unrecognised spec rather than silently reaching nothing; a `DispatchAccount` pairs one with the vouching plugin's label.
 
 ### `Index` — [lib/thanatos/index.rb](../lib/thanatos/index.rb)
 **Responsibility:** the constant registry **and** the inheritance graph.
@@ -280,7 +284,14 @@ Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `
 - **`contributions`** assembles the `[facts, dimension]` pairs that share a resolution table: same-dimension (the class + ancestors + descendants) plus the **extend cross-links** (a class's singleton table draws on the instance methods of modules it extends, and vice-versa).
 - **Plugins (optional).** `apply_plugins!` runs after `resolve_inheritance!` and before grading: each applicable plugin contributes reasons (→ `plugin_reasons`), invocations (→ `acquittals`), and/or a dispatch account (→ `dispatch_accounts`) — the reason, acquit, and account levers.
 - **Acquit.** A plugin's `invokes` names seed extra reachability roots, so an acquitted method is *reached* and never a candidate. `acquittals` is the with/without-acquit diff — methods removed *only* because a plugin vouched — surfaced for audit (redundant acquits, where real code also reaches the method, are not reported).
-- **Confidence** is decided explicitly by `grade` (no longer `reasons.empty?`). Any *doubt* → `:low`: a **symbol literal** matching the name, an **explicit call** for a `protected` method, a **plugin reason**, or a **marker** that `markers_verdict` finds *tainting* (an unaccounted dynamic-dispatch class in the hierarchy, or an account whose reach names the method). No doubt, but a marker in the hierarchy that's fully accounted-for and doesn't reach the method → `:medium` (with the accounting plugin's provenance). No doubt and no marker at all → `:high`. *(The signal merge and marker walk span `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
+- **Confidence** is delegated to `Grader` (one per hierarchy). `Reachability` decides only *reached vs not*; `Grader` decides *how confident, and why*.
+
+### `Grader` — [lib/thanatos/grader.rb](../lib/thanatos/grader.rb)
+**Responsibility:** grade an unreached candidate — the confidence and its reasons.
+**Encoded logic:**
+- Confidence is decided from *structure*, not `reasons.empty?`. Any **doubt** → `:low`: a **symbol literal** matching the name, an **explicit call** for a `protected` method, a **plugin reason**, or a **marker** that `resolve_markers` finds *tainting* (an unaccounted dynamic-dispatch class in the hierarchy, or an account whose reach names the method). No doubt but a marker that's fully accounted-for and doesn't reach the method → `:medium` (with the accounting plugin's provenance). No doubt and no marker → `:high`.
+- Each branch returns its own reasons via a `Verdict`, so the confidence decision never touches a mutable reason list. `resolve_markers` returns a `MarkerResolution` (data — which accounts, which classes), which renders its own provenance; the decision stays string-free.
+- *(The signal merge and marker walk span `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
 
 ### `LocalVariables` — [lib/thanatos/local_variables.rb](../lib/thanatos/local_variables.rb)
 A separate `Prism::Visitor` for a fully **decidable** problem (see [decidability.md](decidability.md)).
