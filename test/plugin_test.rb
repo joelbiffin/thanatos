@@ -10,6 +10,61 @@ class PluginTest < Minitest::Test
       default_kwarg: "referenced in %{macro} %{key}:"
   end
 
+  class Account < Minitest::Test
+    class PublicDispatchPlugin < Thanatos::Plugin
+      inherits_from "Machine"
+      accounts_for_dispatch reaches: :public
+    end
+
+    class ActionDispatchPlugin < Thanatos::Plugin
+      inherits_from "Router"
+      accounts_for_dispatch reaches: /\Aon_/
+    end
+
+    PUBLIC_SOURCE = <<~RUBY
+      class Machine
+        def dispatch(name); send(name); end
+      end
+      class Worker < Machine
+        private
+        def helper; end
+      end
+    RUBY
+
+    test "without an account, a marker in the hierarchy taints the private to low" do
+      helper = candidates_for(PUBLIC_SOURCE).find { |c| c.name == :helper }
+      assert_equal :low, helper.confidence
+    end
+
+    test "an account reaching only public methods lifts the private to medium, with provenance" do
+      helper = candidates_for(PUBLIC_SOURCE, plugins: [PublicDispatchPlugin.new]).find { |c| c.name == :helper }
+
+      assert_equal :medium, helper.confidence
+      assert helper.reasons.any? { |r| r.include?("accounted") && r.include?("PublicDispatchPlugin") }
+    end
+
+    ROUTER_SOURCE = <<~RUBY
+      class Router
+        def route(event); send("on_\#{event}"); end
+        private
+        def on_click; end
+        def unrelated; end
+      end
+    RUBY
+
+    test "a matcher account keeps the dispatch targets low but lifts the rest to medium" do
+      by_name = candidates_for(ROUTER_SOURCE, plugins: [ActionDispatchPlugin.new]).to_h { |c| [c.name, c.confidence] }
+
+      assert_equal :low, by_name[:on_click]      # reach matches -> still hedged
+      assert_equal :medium, by_name[:unrelated]   # reach excludes -> reclaimed
+    end
+
+    test "an unaccounted marker stays low even with an unrelated plugin configured" do
+      helper = candidates_for(PUBLIC_SOURCE, plugins: [ActionDispatchPlugin.new]).find { |c| c.name == :helper }
+      assert_equal :low, helper.confidence        # plugin gated to Router, does not account for Machine
+    end
+  end
+
   class Gating < Minitest::Test
     test "a plugin with no inherits_from applies to every class" do
       plugin = Class.new(Thanatos::Plugin).new

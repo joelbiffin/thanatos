@@ -86,6 +86,9 @@ module Thanatos
 
           plugin.reasons_for_class(facts).each { |name, reason| facts.plugin_reasons[name] << reason }
           plugin.invocations_for_class(facts).each { |name, macro| facts.acquittals[name] << "#{plugin_label(plugin)} via #{macro}" }
+          if (reach = plugin.account_for(facts))
+            facts.dispatch_accounts << DispatchAccount.new(reach: Reach.new(reach), source: plugin_label(plugin))
+          end
         end
       end
     end
@@ -179,7 +182,7 @@ module Thanatos
     def grade(definition, signals:, hierarchy:, explicit_calls:, plugin_reasons:)
       reasons = signals.reasons_for(definition)
 
-      verdict = markers_verdict(hierarchy, definition)
+      verdict, accounted_note = markers_verdict(hierarchy, definition)
       reasons << signals.dynamic_dispatch_reason if verdict == :tainted
 
       if definition.visibility == :protected && explicit_calls.include?(definition.name)
@@ -195,13 +198,26 @@ module Thanatos
         else
           :high
         end
+      reasons << accounted_note if confidence == :medium
       [confidence, reasons]
     end
 
-    def markers_verdict(hierarchy, _definition)
-      return :none unless hierarchy.any? { |facts| facts.signals.dynamic_markers.any? }
+    # A marker taints a candidate unless every marker-bearing class in its hierarchy
+    # is accounted for by a plugin whose reach excludes this method. All accounted
+    # and none reaching -> :accounted_clean (with the provenance note for :medium).
+    def markers_verdict(hierarchy, definition)
+      marker_classes = hierarchy.select { |facts| facts.signals.dynamic_markers.any? }
+      return [:none, nil] if marker_classes.empty?
 
-      :tainted
+      sources = []
+      marker_classes.each do |marker_class|
+        accounts = marker_class.dispatch_accounts
+        return [:tainted, nil] if accounts.empty?
+        return [:tainted, nil] if accounts.any? { |account| account.reaches?(definition.name) }
+
+        sources.concat(accounts.map { |account| "#{account.source} (dispatch in #{marker_class.fqn})" })
+      end
+      [:accounted_clean, "dispatch accounted for by #{sources.uniq.join(', ')}"]
     end
 
     def union(hierarchy, attribute)
