@@ -87,9 +87,6 @@ module Thanatos
       end
     end
 
-    # What this plugin claims the class's dynamic dispatch reaches: :public / :none
-    # (nothing a private candidate could be), a Regexp, or a name list. Override for
-    # a reach derived from the class itself. nil means "I don't account for it".
     def account_for(_facts)
       self.class.dispatch_reach
     end
