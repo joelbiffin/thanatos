@@ -16,22 +16,29 @@ Thanatos on its own stack, without changing Thanatos itself.
 
 ## The levers, and what keeps them safe
 
-A plugin has two levers today (a third, `account`, is
-[planned](plugin-confidence-design.md)):
+A plugin has three levers:
 
 - **reason** (`reference_macro`) — attaches a reason, which downgrades the finding
   to `:low`. A wrong reason only adds noise; the method is still reported.
 - **acquit** (`invokes`) — declares that a DSL *definitely* invokes a method, so it
-  is reached and removed from the candidate list entirely. This is for the case a
-  reason can't express: a state-machine guard (`transition unless: :barable?`) that
-  is genuinely called, not merely maybe-referenced.
+  is reached and removed from the candidate list entirely. For the case a reason
+  can't express: a state-machine guard (`transitions guard: :may_run?`) that is
+  genuinely called, not merely maybe-referenced.
+- **account** (`accounts_for_dispatch`) — declares what a dynamic construct
+  (`send`, `method_missing`) *reaches*, so methods it provably can't touch stop
+  being wholesale-downgraded. A method left clean this way is graded **`medium`**
+  (dead as far as we and the plugin can tell, but resting on the plugin's claim),
+  not `low`.
 
-Acquit is the one lever that can *hide* a finding, so a wrong `invokes` is a false
-negative (a dead method never surfaced). The mitigation is that **acquittals are
-never silent**: every one is reported (a count always, the detail under
-`--show-acquittals`) with the plugin and macro that vouched for it, so the claim is
-auditable. The invariant is that no plugin action is invisible — a reason shows as
-`:low`, an acquittal shows in the acquittals report.
+Two of these can go wrong in ways worth knowing. **acquit** can *hide* a finding,
+so a wrong `invokes` is a false negative -- mitigated by acquittals never being
+silent (a count always, the detail under `--show-acquittals`, naming the plugin
+and macro that vouched). **account** can *promote* a finding, so a wrong
+`accounts_for_dispatch` puts a live method in `medium` -- bounded because `medium`
+never gates CI (that's `high` only) and each `medium` names the plugin that
+vouched. The invariant across all three: no plugin action is invisible — a reason
+shows as `:low`, an acquittal shows in the acquittals report, an account shows as
+`:medium` with its provenance.
 
 ## Writing a plugin
 
@@ -106,6 +113,30 @@ drops out of the candidate list and appears in the acquittals report
 (`--show-acquittals`) as vouched-for by this plugin. Use `invokes` only where the
 call is genuinely definite; where it's merely *possible*, use `reference_macro`
 (which downgrades rather than removes).
+
+### 4. Un-taint dynamic dispatch with `accounts_for_dispatch`
+
+A `send`/`method_missing` anywhere in a hierarchy currently downgrades *every*
+private in it to `low`, wholesale. If you know what a construct actually reaches,
+`accounts_for_dispatch` says so, and methods it can't touch are reclaimed to
+`medium` instead of drowning in `low`:
+
+```ruby
+class ServiceObjectPlugin < Thanatos::Plugin
+  inherits_from "Service"                 # a base whose plumbing does public_send(name)
+  accounts_for_dispatch reaches: :public  # ...to the public entry, never a private
+end
+```
+
+`reaches:` takes `:public`/`:none` (reaches nothing a private candidate could be),
+a `Regexp` (reaches names matching it — a `send("on_#{e}")` dispatcher hits
+`/\Aon_/`, so unrelated privates are reclaimed while `on_*` stay `low`), or a name
+list. For a reach derived from the class itself — a serializer's declared
+`attributes`, say — override `account_for(facts)` and return the reach.
+
+Unlike the other two levers, this one can *promote*: a wrong account puts a live
+method in `medium`. That's why it's `medium`, not `high` — it never gates CI, and
+the finding names the plugin that vouched, so a bad account is traceable.
 
 ## The gate: `inherits_from`
 
@@ -191,8 +222,9 @@ literal, a dynamic-dispatch marker, a call site; see
 reason). A plugin author writes the reason string, so the reason lever
 contributes conclusions. That's why `plugin_reasons` is kept out of
 `ReferenceSignals` and layered on afterward — the boundary is discussed in
-[design-critique.md](design-critique.md) §2.6. (The acquit lever is different
-again: it contributes a call *edge*, not a reason or a signal.)
+[design-critique.md](design-critique.md) §2.6. (The other two levers are different
+again: acquit contributes a call *edge*, and account *narrows a marker* — neither
+is a reason or a signal.)
 
 ## Where this is tested
 

@@ -110,17 +110,18 @@ this. The assumption "the list is small and stable" is false for Rails.
   ceiling** — and if you ever push this at the monolith for real, `delegate`/`enum`/
   callbacks are the first things to add (as constants, not a framework).
 
-**Update (`0822889`, `fab9318`) — extension point added, PARTIALLY.** There is now
-a [plugin system](../docs/plugins.md): a plugin can teach Thanatos a gem macro's
-meaning and attach a precise reason. Two caveats keep this "partial". First,
-plugins are **reasons-only** — they *downgrade* a callback-reached method with a
-better reason, but they do **not** define methods, so the other half of this
-weakness (a method that exists only via `delegate` looks *undefined*) is still
-unaddressed by design (defining methods would let a plugin manufacture false
-negatives). Second, no plugins ship and there's no `Gemfile.lock` auto-loading
-yet — the hardcoded idiom tables in `IndexBuilder` are untouched. So the accuracy
-*ceiling* is unchanged; what's new is a safe, per-codebase way to explain the
-framework-reached hedges.
+**Update — extension point added, with three levers.** There is now a
+[plugin system](../docs/plugins.md) where a codebase teaches Thanatos its gem
+macros: *reason* (attach a precise reason), *acquit* (declare a method a DSL
+definitely calls, removing it), and *account* (declare what a dynamic construct
+reaches, reclaiming the rest to `medium`). One caveat keeps this short of the full
+weakness: plugins do **not** define methods, so the sibling problem — a method
+that exists only via `delegate` looks *undefined* — is still unaddressed by design
+(defining methods would let a plugin manufacture false negatives). And no plugins
+ship / there's no `Gemfile.lock` auto-loading yet; the hardcoded idiom tables in
+`IndexBuilder` are untouched. So the *raw* accuracy ceiling is unchanged, but a
+codebase can now precisely account for its own dispatch idioms rather than eat the
+wholesale downgrade.
 
 ### 2.4 Performance: the redundant work is re-parsing and per-class graph rebuilds (measured)
 
@@ -211,12 +212,18 @@ structured signals, render strings separately" split has landed, and `Reachabili
 no longer assembles reason strings inline. `plugin_reasons` (a plugin's rendered
 conclusion) and `explicit_calls` (a definite call gated on `:protected`) were
 deliberately kept **out** of the model — a signal is not a conclusion, and folding
-them back would re-mix the two (the signal-vs-conclusion boundary). What is **not**
-fixed: confidence is still literally `reasons.empty? ? :high : :low`, so the
-*verdict* remains coupled to the presence of explanation strings, and the signals
-are still coarse (`markers.any?` name-agnostic, symbol-literal hierarchy-wide). The
-model now makes tightening those a local change, but the tightening itself is
-future work.
+them back would re-mix the two (the signal-vs-conclusion boundary).
+
+**Follow-up (plugin confidence levers) — the coupling is gone and the marker
+signal is tightened.** `Reachability#grade` now decides confidence explicitly
+(three-way: `high`/`medium`/`low`), so the *verdict* is no longer `reasons.empty?`
+— a plugin-vouched `medium` carries a provenance string without that string
+forcing `:low`. And the blunt `markers.any?` is replaced by per-method resolution:
+a plugin can *account for* a dynamic construct (declare what it reaches), so a
+marker no longer wholesale-taints every private in a hierarchy — only the methods
+its reach actually names. What remains coarse: the symbol-literal check is still
+hierarchy-wide (a `:foo` anywhere spares `foo`), and an *unaccounted* marker still
+taints wholesale by default (the sound conservative fallback).
 
 ### 2.7 No regression corpus — refactors lean on a manual diff
 
