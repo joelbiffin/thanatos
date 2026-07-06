@@ -2,8 +2,6 @@ require "optparse"
 
 module Thanatos
   class CLI
-    CONFIDENCE_RANK = { low: 0, high: 1 }.freeze
-
     def self.run(argv, out: $stdout)
       new(argv, out:).run
     end
@@ -19,17 +17,17 @@ module Thanatos
     def run
       @plugin_files.each { |file| require File.expand_path(file) }
       analyzer = Analyzer.new(paths: @paths, plugins: Thanatos.configuration.plugins)
-      candidates = analyzer.call.select { |candidate| meets_min_confidence?(candidate) }
+      candidates = analyzer.call.select { |candidate| candidate.meets?(@min_confidence) }
       report(candidates, analyzer.acquittals)
-      candidates.any?(&:high_confidence?) ? 1 : 0
+      candidates.any?(&:gating?) ? 1 : 0
     end
 
     private
 
     def parse(argv)
       paths = OptionParser.new do |opts|
-        opts.on("--min-confidence LEVEL", %w[low high],
-                "Only report candidates at this confidence or higher (low|high; default low)") do |level|
+        opts.on("--min-confidence LEVEL", Candidate::LEVELS.map(&:to_s),
+                "Only report candidates at this confidence or higher (low|medium|high; default low)") do |level|
           @min_confidence = level.to_sym
         end
         opts.on("--plugins FILE1,FILE2", Array,
@@ -42,10 +40,6 @@ module Thanatos
       end.parse(argv)
 
       paths.empty? ? ["."] : paths
-    end
-
-    def meets_min_confidence?(candidate)
-      CONFIDENCE_RANK.fetch(candidate.confidence) >= CONFIDENCE_RANK.fetch(@min_confidence)
     end
 
     def report(candidates, acquittals)
@@ -63,7 +57,7 @@ module Thanatos
           end
         end
 
-        high = candidates.count(&:high_confidence?)
+        high = candidates.count { |candidate| candidate.meets?(:high) }
         @out.puts ""
         @out.puts "#{candidates.length} candidate(s), #{high} high-confidence."
       end
