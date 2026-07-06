@@ -64,14 +64,14 @@ module Thanatos
               next
             end
 
-            confidence, reasons = grader.grade(definition)
+            verdict = grader.grade(definition)
             @candidates << Candidate.new(
               fqn: facts.fqn,
               name:,
               visibility: definition.visibility,
               location: definition.location,
-              confidence:,
-              reasons:
+              confidence: verdict.confidence,
+              reasons: verdict.reasons
             )
           end
         end
