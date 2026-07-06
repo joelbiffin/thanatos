@@ -13,11 +13,15 @@ So the engineering follows the maths: **implement the lexical fragment; abstain
 on the computed tail** — Thanatos still reports the computed cases, but downgrades
 them to low confidence with a reason rather than claiming them dead.
 
-[Plugins](plugins.md) don't move this boundary. A plugin only makes the *reason*
-on an abstention more precise — "invoked as a `before_action` callback" instead
-of the generic "referenced as a symbol literal" — by encoding what a gem macro
-means. It still downgrades, never claims reachability, so it can't turn an
-undecidable case into a decided one; it just explains the hedge better.
+[Plugins](plugins.md) don't move this boundary — they supply knowledge from
+*outside* the source rather than deciding anything the static tool couldn't. A
+plugin either sharpens the *reason* on an abstention ("invoked as a
+`before_action` callback" instead of the generic "referenced as a symbol
+literal"), or, for a DSL that genuinely invokes a method, *acquits* it by
+declaring the call the tool can't see (a state-machine guard). The acquit is a
+claim of reachability, but it's the plugin author's claim about the gem — not
+the static analysis suddenly deciding an undecidable case. And because a wrong
+acquit could hide a real dead method, every acquittal is reported for review.
 
 ## Decidable — implemented
 

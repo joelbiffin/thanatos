@@ -1,6 +1,8 @@
 # Design: three plugin levers and a `medium` grade
 
-Status: proposed. This extends the plugin system from one lever (reason) to three
+Status: partly landed — the acquit lever (step 1) and the `Candidate` confidence
+ordering are implemented; the account lever and the `medium` grade (steps 2–4)
+are still proposed. This extends the plugin system from one lever (reason) to three
 (reason, acquit, account), adds a `medium` confidence grade, and makes every
 plugin action auditable. It exists because the reasons-only model can't express
 two things a real codebase needs: a DSL that *definitely* invokes a method
@@ -110,16 +112,17 @@ For a candidate `m` over its hierarchy:
 
 ## Sequencing (each step green; the no-plugin path stays byte-identical)
 
-1. **Acquit + acquittal report.** `invokes` DSL → attributed call edges in
+1. **Acquit + acquittal report (done).** `invokes` DSL → attributed call edges in
    `apply_plugins!`; `Reachability` returns candidates *and* an acquittals list;
-   CLI count + `--show-acquittals`. Lowest-risk lever, lands first.
+   CLI count + `--show-acquittals`. Lowest-risk lever, landed first.
 2. **Marker restructuring** — `dynamic_markers` → attributed occurrences.
    Behaviour-preserving.
 3. **Per-method marker resolution, inert** — no accounts configured → identical
    output.
-4. **Account + `medium` grade** — `accounts_for_dispatch`, `CONFIDENCE_RANK`/CLI
-   wiring, provenance. The only step that changes output toward promotion; validated
-   against the pinned-snapshot diff and a service-object-base acceptance case.
+4. **Account + `medium` grade** — `accounts_for_dispatch`, wiring the new grade
+   through `Candidate::LEVELS`/`meets?` and the CLI, plus provenance. The only step
+   that changes output toward promotion; validated against the pinned-snapshot diff
+   and a service-object-base acceptance case.
 
 The regression net throughout is a byte-identical check of the no-plugin path
 against a pinned snapshot of a real Rails codebase; the with-plugin behaviour is

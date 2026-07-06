@@ -183,15 +183,16 @@ Because plugins downgrade rather than hide, the dangerous direction —
 *under*-flagging (leaving a dynamically-reached method at `:high`) — is the one
 to guard, which is why the net over arguments is deliberately wide.
 
-## Why plugins produce reasons, not signals
+## Why a reason is a conclusion, not a signal
 
 Thanatos separates a *signal* (a raw observation from the source — a symbol
 literal, a dynamic-dispatch marker, a call site; see
 [`ReferenceSignals`](architecture.md)) from a *conclusion* (an already-rendered
-reason). A plugin author writes the reason string, so a plugin contributes
-conclusions. That's why `plugin_reasons` is kept out of `ReferenceSignals` and
-layered on afterward — the boundary is discussed in
-[design-critique.md](design-critique.md) §2.6.
+reason). A plugin author writes the reason string, so the reason lever
+contributes conclusions. That's why `plugin_reasons` is kept out of
+`ReferenceSignals` and layered on afterward — the boundary is discussed in
+[design-critique.md](design-critique.md) §2.6. (The acquit lever is different
+again: it contributes a call *edge*, not a reason or a signal.)
 
 ## Where this is tested
 
