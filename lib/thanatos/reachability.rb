@@ -61,13 +61,13 @@ module Thanatos
               next
             end
 
-            reasons = reasons_for(definition, signals:, explicit_calls: explicit, plugin_reasons:)
+            confidence, reasons = grade(definition, signals:, hierarchy:, explicit_calls: explicit, plugin_reasons:)
             @candidates << Candidate.new(
               fqn: facts.fqn,
               name:,
               visibility: definition.visibility,
               location: definition.location,
-              confidence: reasons.empty? ? :high : :low,
+              confidence:,
               reasons:
             )
           end
@@ -176,15 +176,32 @@ module Thanatos
       reached
     end
 
-    def reasons_for(definition, signals:, explicit_calls:, plugin_reasons:)
+    def grade(definition, signals:, hierarchy:, explicit_calls:, plugin_reasons:)
       reasons = signals.reasons_for(definition)
+
+      verdict = markers_verdict(hierarchy, definition)
+      reasons << signals.dynamic_dispatch_reason if verdict == :tainted
 
       if definition.visibility == :protected && explicit_calls.include?(definition.name)
         reasons << "explicit call .#{definition.name} in the hierarchy (possible protected use)"
       end
-
       reasons.concat(plugin_reasons[definition.name])
-      reasons
+
+      confidence =
+        if reasons.any?
+          :low
+        elsif verdict == :accounted_clean
+          :medium
+        else
+          :high
+        end
+      [confidence, reasons]
+    end
+
+    def markers_verdict(hierarchy, _definition)
+      return :none unless hierarchy.any? { |facts| facts.signals.dynamic_markers.any? }
+
+      :tainted
     end
 
     def union(hierarchy, attribute)
