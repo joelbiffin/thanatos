@@ -40,9 +40,12 @@ module Thanatos
 
       @index.all.each do |facts|
         hierarchy = [facts, *@index.ancestors(facts.fqn), *@index.descendants(facts.fqn)]
-        signals = merged_signals(hierarchy)
-        explicit = union(hierarchy, :explicit_calls)
-        plugin_reasons = union_plugin_reasons(hierarchy)
+        grader = Grader.new(
+          signals: merged_signals(hierarchy),
+          hierarchy:,
+          explicit_calls: union(hierarchy, :explicit_calls),
+          plugin_reasons: union_plugin_reasons(hierarchy)
+        )
 
         %i[instance singleton].each do |dimension|
           scope = contributions(facts, dimension)
@@ -61,7 +64,7 @@ module Thanatos
               next
             end
 
-            confidence, reasons = grade(definition, signals:, hierarchy:, explicit_calls: explicit, plugin_reasons:)
+            confidence, reasons = grader.grade(definition)
             @candidates << Candidate.new(
               fqn: facts.fqn,
               name:,
@@ -177,47 +180,6 @@ module Thanatos
         graph[method].each { |callee| queue << callee unless reached.include?(callee) }
       end
       reached
-    end
-
-    def grade(definition, signals:, hierarchy:, explicit_calls:, plugin_reasons:)
-      reasons = signals.reasons_for(definition)
-
-      verdict, accounted_note = markers_verdict(hierarchy, definition)
-      reasons << signals.dynamic_dispatch_reason if verdict == :tainted
-
-      if definition.visibility == :protected && explicit_calls.include?(definition.name)
-        reasons << "explicit call .#{definition.name} in the hierarchy (possible protected use)"
-      end
-      reasons.concat(plugin_reasons[definition.name])
-
-      confidence =
-        if reasons.any?
-          :low
-        elsif verdict == :accounted_clean
-          :medium
-        else
-          :high
-        end
-      reasons << accounted_note if confidence == :medium
-      [confidence, reasons]
-    end
-
-    # A marker taints a candidate unless every marker-bearing class in its hierarchy
-    # is accounted for by a plugin whose reach excludes this method. All accounted
-    # and none reaching -> :accounted_clean (with the provenance note for :medium).
-    def markers_verdict(hierarchy, definition)
-      marker_classes = hierarchy.select { |facts| facts.signals.dynamic_markers.any? }
-      return [:none, nil] if marker_classes.empty?
-
-      sources = []
-      marker_classes.each do |marker_class|
-        accounts = marker_class.dispatch_accounts
-        return [:tainted, nil] if accounts.empty?
-        return [:tainted, nil] if accounts.any? { |account| account.reaches?(definition.name) }
-
-        sources.concat(accounts.map { |account| "#{account.source} (dispatch in #{marker_class.fqn})" })
-      end
-      [:accounted_clean, "dispatch accounted for by #{sources.uniq.join(', ')}"]
     end
 
     def union(hierarchy, attribute)

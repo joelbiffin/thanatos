@@ -63,6 +63,39 @@ class PluginTest < Minitest::Test
       helper = candidates_for(PUBLIC_SOURCE, plugins: [ActionDispatchPlugin.new]).find { |c| c.name == :helper }
       assert_equal :low, helper.confidence        # plugin gated to Router, does not account for Machine
     end
+
+    test "an account does not lift a method that also carries a symbol reference" do
+      source = <<~RUBY
+        class Machine
+          def dispatch(name); send(name); end
+          guard :helper
+          private
+          def helper; end
+        end
+      RUBY
+
+      helper = candidates_for(source, plugins: [PublicDispatchPlugin.new]).find { |c| c.name == :helper }
+      assert_equal :low, helper.confidence         # :helper symbol wins over the accounted marker
+    end
+
+    test "one unaccounted marker in the hierarchy taints even when another is accounted" do
+      source = <<~RUBY
+        class Machine
+          def dispatch(name); send(name); end        # accounted (PublicDispatchPlugin)
+        end
+        module Extra
+          def run(name); instance_eval(name); end     # not accounted by any plugin
+        end
+        class Worker < Machine
+          include Extra
+          private
+          def helper; end
+        end
+      RUBY
+
+      helper = candidates_for(source, plugins: [PublicDispatchPlugin.new]).find { |c| c.name == :helper }
+      assert_equal :low, helper.confidence
+    end
   end
 
   class Gating < Minitest::Test
