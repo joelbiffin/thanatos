@@ -41,6 +41,9 @@ at the code you want to analyse:
 
 # Load Ruby files that register plugins via Thanatos.configure (see Plugins below)
 ./exe/thanatos ~/code/my-app --plugins config/thanatos.rb
+
+# Review what those plugins acquitted (methods they declared as definitely called)
+./exe/thanatos ~/code/my-app --plugins config/thanatos.rb --show-acquittals
 ```
 
 The path may live in any project — Thanatos analyses whatever Ruby files it
@@ -146,10 +149,13 @@ From the CLI, `--plugins a.rb,b.rb` loads Ruby files that are expected to call
 only registering it does. No plugins ship by default, and with no `--plugins`
 nothing changes.
 
-Plugins are deliberately weak — they can only **attach a reason** (which
-downgrades a finding to `low`), never mark a method reachable — so a wrong plugin
-adds noise but can never hide dead code. The full authoring guide, the ancestry
-gate, and the assumptions are in [`docs/plugins.md`](docs/plugins.md).
+A plugin has two levers. **Reason** (a `reference_macro`) downgrades a finding to
+`low` — a wrong one only adds noise. **Acquit** (`invokes`) declares a method the
+DSL *definitely* calls — a state-machine guard, say — so it's treated as reached
+and drops off the list entirely; because a wrong `invokes` could hide a dead
+method, every acquittal is reported (`--show-acquittals`) for review. The full
+authoring guide, the ancestry gate, and the assumptions are in
+[`docs/plugins.md`](docs/plugins.md).
 
 ## Testing
 

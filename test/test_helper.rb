@@ -28,6 +28,14 @@ module BuildHelpers
   def candidate_names(candidates)
     candidates.map(&:name).sort
   end
+
+  def acquittals_for(source, plugins: [])
+    index = Thanatos::Index.new
+    Thanatos::IndexBuilder.new(index, file: "(inline)").visit(Prism.parse(source).value)
+    reachability = Thanatos::Reachability.new(index, plugins:)
+    reachability.candidates
+    reachability.acquittals
+  end
 end
 
 class Minitest::Test

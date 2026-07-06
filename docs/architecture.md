@@ -78,12 +78,13 @@ classDiagram
     class CLI {
         +run()
         -parse(argv)
-        -meets_min_confidence(c)
-        -report(candidates)
+        -report(candidates, acquittals)
+        -report_acquittals(acquittals)
     }
     class Analyzer {
         +paths
         +parse_errors
+        +acquittals
         +call()
         -expand(path)
     }
@@ -114,6 +115,7 @@ classDiagram
         +signals
         +explicit_calls
         +plugin_reasons
+        +acquittals
         +definitions()
         +singleton_definitions()
     }
@@ -133,12 +135,15 @@ classDiagram
     class Plugin {
         +applies_to?(index, fqn)
         +reasons_for_class(facts)
+        +invocations_for_class(facts)
     }
     class Reachability {
         +candidates()
+        +acquittals()
         -apply_plugins!()
         -merged_signals(hierarchy)
-        -reachable_methods(scope)
+        -reachable_methods(scope, extra_roots)
+        -acquitted_in(scope)
         -contributions(facts, dim)
         -reasons_for(definition)
     }
@@ -154,7 +159,15 @@ classDiagram
         +name
         +confidence
         +reasons
-        +high_confidence()
+        +meets?(minimum)
+        +gating?()
+    }
+    class Acquittal {
+        <<Data>>
+        +fqn
+        +name
+        +location
+        +sources
     }
 
     CLI ..> Analyzer
@@ -170,8 +183,10 @@ classDiagram
     Reachability ..> Plugin : applies
     Plugin ..> Index : gates via inherits_from?
     Reachability ..> Candidate : produces
+    Reachability ..> Acquittal : produces
     LocalVariables ..> Candidate : produces
     CLI ..> Candidate : reports
+    CLI ..> Acquittal : reports
 ```
 
 ---
@@ -184,10 +199,10 @@ The require graph and a convenience `Thanatos.analyze(*paths)`. No logic.
 ### `CLI` — [lib/thanatos/cli.rb](../lib/thanatos/cli.rb)
 **Responsibility:** turn `argv` into a run and an exit status.
 **Encoded logic:**
-- `--min-confidence low|high` (default `low`) parsed with `OptionParser`; ranks via `CONFIDENCE_RANK` and keeps candidates at or above the threshold.
+- `--min-confidence low|medium|high` (default `low`) keeps candidates at or above the threshold via `Candidate#meets?`; the accepted levels come from `Candidate::LEVELS`, so the CLI holds no confidence table of its own.
 - `--plugins a.rb,b.rb` `require`s each file (expected to call `Thanatos.configure`), then hands `Thanatos.configuration.plugins` to the `Analyzer`. No `--plugins` → no configured plugins, output unchanged. See [plugins.md](plugins.md).
-- Output is grouped by FQN, sorted, with each candidate's `reasons` printed beneath it.
-- **Exit code is the CI contract:** `1` if any *surviving* candidate is high-confidence, else `0`.
+- Output is grouped by FQN, sorted, with each candidate's `reasons` printed beneath it. A count of plugin **acquittals** always follows when any exist; `--show-acquittals` prints their detail (method + plugin + macro).
+- **Exit code is the CI contract:** `1` if any *surviving* candidate is **gating** (`Candidate#gating?` — the top level, currently `high`), else `0`. Acquittals never affect the exit code.
 
 ### `Configuration` — [lib/thanatos/configuration.rb](../lib/thanatos/configuration.rb)
 **Responsibility:** the explicit registry of plugins an embedding app opts in.
@@ -202,7 +217,7 @@ The require graph and a convenience `Thanatos.analyze(*paths)`. No logic.
 - One shared `Index` across **all** files, so a class reopened across files is a single scope.
 - Parse errors are **collected, not swallowed** (`parse_errors`), so a syntax error degrades coverage rather than crashing the run.
 - Final result = `Reachability` (method) candidates **+** `LocalVariables` (local) candidates.
-- Any `plugins` given to `Analyzer` are handed to `Reachability` (default: none).
+- Any `plugins` given to `Analyzer` are handed to `Reachability` (default: none); it also exposes the run's `acquittals` (methods a plugin removed from the list) for the CLI to report.
 
 ### `IndexBuilder` — [lib/thanatos/index_builder.rb](../lib/thanatos/index_builder.rb)
 A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the AST and records facts into the `Index`; it makes **no deadness decisions**. It carries a single `@scopes` stack of `Scope` value objects, specialised into a subclass per kind — `Namespace`, `InstanceMethod`, `SingletonMethod`, `SingletonClass` — each carrying `fqn`, `facts` (the current `ClassFacts`), `visibility`, and `method_name`, and answering `singleton?` / `class_self?` by kind rather than via flags. The `Scope` factories own which kind a construct opens (`Scope.root` for a namespace; `Scope.method_for` for a `def`, choosing instance vs class method; `Scope.singleton_class_for` for `class << self`; `Scope.define_method_for` for a define_method block). Every construct pushes and pops exactly one frame, so the stack stays balanced by construction; a `private` that flips ambient visibility replaces the frame via `scope.with_visibility(…)` (frames are values, never mutated).
@@ -238,11 +253,12 @@ A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the
 **Responsibility:** the framework-awareness extension point (full detail in [plugins.md](plugins.md)).
 **Encoded logic:**
 - `applies_to?(index, fqn)` gates the plugin, optionally to a class hierarchy via `inherits_from` (matched by `Index#inherits_from?`); ungated plugins apply everywhere.
-- `reasons_for_class(facts)` returns `[name, reason]` pairs — usually by declaring `reference_macro`s over a gem's callback DSLs (their symbol arguments become reasons), or by overriding the method for logic the DSL can't express.
-- **Deliberately weak:** a plugin can only attach a reason (downgrade a candidate to `:low`); it can never add call edges, definitions, or roots. So a wrong plugin adds noise but can never hide dead code.
+- `reasons_for_class(facts)` returns `[name, reason]` pairs — the **reason** lever (downgrade to `:low`), usually via `reference_macro`s over a gem's callback DSLs, or an override.
+- `invocations_for_class(facts)` returns `[name, macro]` pairs — the **acquit** lever, declared with `invokes`: the named methods are treated as definitely called, so they're *reached and removed* from candidates (for a DSL that genuinely invokes, like a state-machine guard).
+- **Two levers, two failure modes.** A wrong reason only adds noise; a wrong `invokes` *hides* a dead method (a false negative). That is why acquittals are always reported (see `Reachability#acquittals`): the acquit lever's risk is made auditable rather than silent. A plugin still cannot fabricate a `:high` or promote a method.
 
-### `MethodDefinition` / `Candidate` — [lib/thanatos/method_definition.rb](../lib/thanatos/method_definition.rb), [lib/thanatos/candidate.rb](../lib/thanatos/candidate.rb)
-Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and `high_confidence?` for the CLI.
+### `MethodDefinition` / `Candidate` / `Acquittal` — [lib/thanatos/method_definition.rb](../lib/thanatos/method_definition.rb), [lib/thanatos/candidate.rb](../lib/thanatos/candidate.rb), [lib/thanatos/acquittal.rb](../lib/thanatos/acquittal.rb)
+Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and owns the confidence vocabulary: `meets?(minimum)` (the ordinal threshold over `Candidate::LEVELS`, `low < medium < high`) and `gating?` (the top, build-failing level). Keeping the ordering here means the CLI holds no confidence table. `Acquittal` records a method a plugin removed from the list — `fqn`, `name`, `location`, and `sources` (which plugin/macro vouched) — for the audit report.
 
 ### `Index` — [lib/thanatos/index.rb](../lib/thanatos/index.rb)
 **Responsibility:** the constant registry **and** the inheritance graph.
@@ -258,7 +274,8 @@ Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `
 - **Roots** = `CLASS_BODY` + `RUNTIME_HOOKS` + every public method name in scope. `RUNTIME_HOOKS` (`initialize`, `method_missing`, `inherited`, `coerce`, …) are invoked by the runtime, never by an explicit call, so a defined hook seeds reachability like a root.
 - **A candidate** is a `private`/`protected` method not in the reached set for its dimension.
 - **`contributions`** assembles the `[facts, dimension]` pairs that share a resolution table: same-dimension (the class + ancestors + descendants) plus the **extend cross-links** (a class's singleton table draws on the instance methods of modules it extends, and vice-versa).
-- **Plugins (optional).** `apply_plugins!` runs after `resolve_inheritance!` and before grading: each plugin that `applies_to?` a class attaches reasons to its methods (into `plugin_reasons`). Plugins only *add reasons*, never edges or roots.
+- **Plugins (optional).** `apply_plugins!` runs after `resolve_inheritance!` and before grading: each applicable plugin contributes reasons (→ `plugin_reasons`, the reason lever) and/or invocations (→ `acquittals`, the acquit lever).
+- **Acquit.** A plugin's `invokes` names seed extra reachability roots, so an acquitted method is *reached* and never a candidate. `acquittals` is the with/without-acquit diff — methods removed *only* because a plugin vouched — surfaced for audit (redundant acquits, where real code also reaches the method, are not reported).
 - **Confidence** is `:high` unless `reasons_for` finds doubt over the hierarchy: the merged `ReferenceSignals` raises a reason (a **symbol literal** matching the name, or **any dynamic-dispatch marker** in the hierarchy), a `protected` method has a matching **explicit call**, or a **plugin** attached a reason. Otherwise `:low`. Confidence is still literally `reasons.empty? ? :high : :low`. *(The signal merge walks `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
 
 ### `LocalVariables` — [lib/thanatos/local_variables.rb](../lib/thanatos/local_variables.rb)
@@ -293,6 +310,6 @@ The call graph is deliberately **name-based, not binding-based**: Thanatos never
 
 - **Deterministic & static.** No code is loaded or executed; the same inputs always give the same output.
 - **Reachability from roots**, not "has a caller" — dead clusters and recursion are still reported.
-- **Only a *proof* removes a candidate.** A literal `send(:x)` acquits `x` (it is genuinely called). A mere *hint* of dynamic reach (a computed `send`, a bare symbol) **downgrades to `:low`**, it does not delete the finding — so a real dead method is never silently dropped, only flagged for review.
+- **Only a *proof* removes a candidate.** A literal `send(:x)` acquits `x` (it is genuinely called); a plugin's `invokes` is the same claim, asserted from outside the source. A mere *hint* of dynamic reach (a computed `send`, a bare symbol) **downgrades to `:low`**, it does not delete the finding — so a real dead method is never silently dropped, only flagged for review.
 - **Scope is the boundary.** Thanatos only knows the files it was given. A caller in a gem, a Rails engine, or a view is "out of architecture" and looks the same as an unused public method — which is why public-method and constant liveness are explicitly [out of scope](../test/out_of_scope_test.rb) for the static tier.
-- **Plugins downgrade, never hide.** A `Plugin` may only attach a reason to a method (dropping it to `:low`); it cannot add call edges, definitions, or roots. So the worst a wrong plugin does is add noise — the zero-false-negative guarantee holds regardless of plugin quality. See [plugins.md](plugins.md).
+- **Plugin risk is bounded and auditable.** A `Plugin` has two levers: *downgrade* (attach a reason → `:low`) and *acquit* (declare a method definitely invoked → reached, removed). Downgrading only adds noise; acquitting can hide a dead method (a false negative), so every acquittal is reported for review — the risk is made legible, not silent. A plugin still cannot promote a method or fabricate a `:high`. See [plugins.md](plugins.md).

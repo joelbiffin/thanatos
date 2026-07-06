@@ -14,21 +14,24 @@ it precisely — instead of guessing from a bare symbol. And a codebase with its
 own tooling or in-house DSLs can describe *its* macros and keep the benefit of
 Thanatos on its own stack, without changing Thanatos itself.
 
-## The one rule that keeps plugins safe
+## The levers, and what keeps them safe
 
-A plugin can **only attach a reason** to a method, which downgrades that method's
-candidate to `:low` confidence. It cannot add reachability edges, define methods,
-or seed roots. So:
+A plugin has two levers today (a third, `account`, is
+[planned](plugin-confidence-design.md)):
 
-> A wrong or careless plugin can make a finding noisier, but can **never hide**
-> genuinely dead code.
+- **reason** (`reference_macro`) — attaches a reason, which downgrades the finding
+  to `:low`. A wrong reason only adds noise; the method is still reported.
+- **acquit** (`invokes`) — declares that a DSL *definitely* invokes a method, so it
+  is reached and removed from the candidate list entirely. This is for the case a
+  reason can't express: a state-machine guard (`transition unless: :barable?`) that
+  is genuinely called, not merely maybe-referenced.
 
-That is the deliberate difference from "acquittal" (marking the method reached,
-which would remove the finding): acquittal on a bad assumption is a false
-negative — the one thing Thanatos refuses. Downgrading is safe because the method
-is still reported; only its confidence changes. This is why the reason text is
-the product: it's printed next to the finding, so the human sees the plugin's
-claim and can check it.
+Acquit is the one lever that can *hide* a finding, so a wrong `invokes` is a false
+negative (a dead method never surfaced). The mitigation is that **acquittals are
+never silent**: every one is reported (a count always, the detail under
+`--show-acquittals`) with the plugin and macro that vouched for it, so the claim is
+auditable. The invariant is that no plugin action is invisible — a reason shows as
+`:low`, an acquittal shows in the acquittals report.
 
 ## Writing a plugin
 
@@ -82,6 +85,27 @@ end
 Here `run` never appears as a symbol, so the core rules leave it `:high`; the
 plugin alone drops it to `:low`. `facts.signals.call_sites` gives you the raw
 call data if you need it.
+
+### 3. Acquit definitely-invoked methods with `invokes`
+
+When a DSL *definitely* calls a method — a state-machine guard, a callback that
+genuinely fires — declare it with `invokes`, and the method is treated as reached
+(not a candidate). It mirrors `reference_macro`'s slots, so you name only the ones
+that carry invoked method symbols:
+
+```ruby
+class AASMPlugin < Thanatos::Plugin
+  inherits_from "AASM"
+  invokes :transitions, kwargs: %i[guard if unless]   # from:/to: are states, not methods
+  invokes :before, :after                              # event callback symbols are invoked
+end
+```
+
+Given `transitions from: :sleeping, to: :running, guard: :may_run?`, `may_run?`
+drops out of the candidate list and appears in the acquittals report
+(`--show-acquittals`) as vouched-for by this plugin. Use `invokes` only where the
+call is genuinely definite; where it's merely *possible*, use `reference_macro`
+(which downgrades rather than removes).
 
 ## The gate: `inherits_from`
 
@@ -159,15 +183,16 @@ Because plugins downgrade rather than hide, the dangerous direction —
 *under*-flagging (leaving a dynamically-reached method at `:high`) — is the one
 to guard, which is why the net over arguments is deliberately wide.
 
-## Why plugins produce reasons, not signals
+## Why a reason is a conclusion, not a signal
 
 Thanatos separates a *signal* (a raw observation from the source — a symbol
 literal, a dynamic-dispatch marker, a call site; see
 [`ReferenceSignals`](architecture.md)) from a *conclusion* (an already-rendered
-reason). A plugin author writes the reason string, so a plugin contributes
-conclusions. That's why `plugin_reasons` is kept out of `ReferenceSignals` and
-layered on afterward — the boundary is discussed in
-[design-critique.md](design-critique.md) §2.6.
+reason). A plugin author writes the reason string, so the reason lever
+contributes conclusions. That's why `plugin_reasons` is kept out of
+`ReferenceSignals` and layered on afterward — the boundary is discussed in
+[design-critique.md](design-critique.md) §2.6. (The acquit lever is different
+again: it contributes a call *edge*, not a reason or a signal.)
 
 ## Where this is tested
 

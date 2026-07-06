@@ -97,6 +97,60 @@ class PluginTest < Minitest::Test
     end
   end
 
+  class Acquit < Minitest::Test
+    class GuardPlugin < Thanatos::Plugin
+      inherits_from "Machine"
+      invokes :guarded, kwargs: %i[unless]
+    end
+
+    SOURCE = <<~RUBY
+      class Machine; end
+      class Account < Machine
+        guarded to: :frozen, unless: :barable?
+        def call; end
+        private
+        def barable?; end
+        def orphan; end
+      end
+    RUBY
+
+    test "without the plugin the guard method is only a low-confidence candidate" do
+      candidate = candidates_for(SOURCE).find { |c| c.name == :barable? }
+
+      refute_nil candidate
+      assert_equal :low, candidate.confidence
+    end
+
+    test "invokes acquits the guard method so it is not a candidate at all" do
+      names = candidates_for(SOURCE, plugins: [GuardPlugin.new]).map(&:name)
+
+      refute_includes names, :barable?    # definitely called → removed
+      assert_includes names, :orphan       # unrelated dead method still flagged
+    end
+
+    test "the acquitted method is reported with provenance" do
+      entry = acquittals_for(SOURCE, plugins: [GuardPlugin.new]).find { |a| a.name == :barable? }
+
+      refute_nil entry
+      assert_equal "Account", entry.fqn
+      assert entry.sources.any? { |s| s.include?("GuardPlugin") && s.include?("guarded") }
+    end
+
+    test "a redundant acquit (the method is also really called) is not reported" do
+      source = <<~RUBY
+        class Machine; end
+        class Account < Machine
+          guarded unless: :barable?
+          def call; barable?; end
+          private
+          def barable?; end
+        end
+      RUBY
+
+      assert_empty acquittals_for(source, plugins: [GuardPlugin.new])
+    end
+  end
+
   class ArbitraryPlugin < Minitest::Test
     class SchedulerPlugin < Thanatos::Plugin
       inherits_from "ScheduledTask"

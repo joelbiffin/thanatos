@@ -5,7 +5,7 @@ module Thanatos
     CLASS_BODY = :"(class body)"
 
     attr_reader :fqn, :nesting, :call_edges, :singleton_call_edges, :explicit_calls,
-                :signals, :include_refs, :extend_refs, :plugin_reasons
+                :signals, :include_refs, :extend_refs, :plugin_reasons, :acquittals
     attr_accessor :superclass_ref, :superclass_fqn, :include_fqns, :extend_fqns
 
     def initialize(fqn, nesting: [])
@@ -26,6 +26,7 @@ module Thanatos
       @explicit_calls = Set.new
       @signals = ReferenceSignals.new
       @plugin_reasons = Hash.new { |reasons, name| reasons[name] = Set.new }
+      @acquittals = Hash.new { |sources, name| sources[name] = Set.new }
     end
 
     def add_definition(name:, visibility:, location:)
