@@ -76,6 +76,10 @@ No unused private/protected methods found.
 
 - **`high`** — no dynamic signals were seen. These are the strongest deletion
   candidates: start here.
+- **`medium`** — would be `low` purely because of a dynamic-dispatch marker, but a
+  [plugin](#plugins) accounted for that dispatch and vouched it can't reach this
+  method. Dead as far as Thanatos and the plugin can tell — worth a review sweep,
+  but not a build-breaker. Only appears once you configure an accounting plugin.
 - **`low`** — the method looks unreferenced, but something in scope could be
   reaching it dynamically, so Thanatos is hedging. Each low-confidence finding
   prints the reason(s) on an indented `↳` line. Read the reason before acting —
@@ -149,13 +153,15 @@ From the CLI, `--plugins a.rb,b.rb` loads Ruby files that are expected to call
 only registering it does. No plugins ship by default, and with no `--plugins`
 nothing changes.
 
-A plugin has two levers. **Reason** (a `reference_macro`) downgrades a finding to
+A plugin has three levers. **Reason** (a `reference_macro`) downgrades a finding to
 `low` — a wrong one only adds noise. **Acquit** (`invokes`) declares a method the
 DSL *definitely* calls — a state-machine guard, say — so it's treated as reached
 and drops off the list entirely; because a wrong `invokes` could hide a dead
-method, every acquittal is reported (`--show-acquittals`) for review. The full
-authoring guide, the ancestry gate, and the assumptions are in
-[`docs/plugins.md`](docs/plugins.md).
+method, every acquittal is reported (`--show-acquittals`) for review. **Account**
+(`accounts_for_dispatch`) declares what a `send`/`method_missing` actually reaches,
+so methods it can't touch are reclaimed from `low` to `medium` instead of being
+wholesale-downgraded. The full authoring guide, the ancestry gate, and the
+assumptions are in [`docs/plugins.md`](docs/plugins.md).
 
 ## Testing
 

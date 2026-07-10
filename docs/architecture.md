@@ -116,6 +116,7 @@ classDiagram
         +explicit_calls
         +plugin_reasons
         +acquittals
+        +dispatch_accounts
         +definitions()
         +singleton_definitions()
     }
@@ -136,6 +137,7 @@ classDiagram
         +applies_to?(index, fqn)
         +reasons_for_class(facts)
         +invocations_for_class(facts)
+        +account_for(facts)
     }
     class Reachability {
         +candidates()
@@ -145,7 +147,11 @@ classDiagram
         -reachable_methods(scope, extra_roots)
         -acquitted_in(scope)
         -contributions(facts, dim)
-        -reasons_for(definition)
+    }
+    class Grader {
+        +grade(definition)
+        -doubt_reasons(definition, markers)
+        -resolve_markers(definition)
     }
     class MethodDefinition {
         <<Data>>
@@ -181,6 +187,7 @@ classDiagram
     ClassFacts "1" o-- "1" ReferenceSignals
     ReferenceSignals "1" o-- "*" CallSite
     Reachability ..> Plugin : applies
+    Reachability ..> Grader : delegates grading
     Plugin ..> Index : gates via inherits_from?
     Reachability ..> Candidate : produces
     Reachability ..> Acquittal : produces
@@ -246,7 +253,7 @@ A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the
 **Responsibility:** the source hints that a method might be reached in a way plain reachability can't see, and how they render as doubt-reasons.
 **Encoded logic:**
 - Holds `symbol_literals`, `dynamic_markers`, and `call_sites` (a `CallSite` = a receiverless call's name + positional/keyword symbol arguments).
-- `merge` folds a whole hierarchy's signals into one; `reasons_for(definition)` renders the **symbol-literal** then **dynamic-dispatch** reasons (that order is the CI-visible output).
+- `merge` folds a whole hierarchy's signals into one. `reasons_for(definition)` renders the **symbol-literal** reason (name-matched); `dynamic_dispatch_reason` renders the marker string, but whether it's *included* is `Reachability`'s call now, since that depends on plugin accounts.
 - It is a *signal* model: it never holds a plugin's already-rendered conclusion — that separation is the point (see [design-critique.md](design-critique.md) §2.6).
 
 ### `Plugin` — [lib/thanatos/plugin.rb](../lib/thanatos/plugin.rb)
@@ -255,10 +262,11 @@ A `Prism::Visitor`. **This is where Ruby's semantics are encoded.** It walks the
 - `applies_to?(index, fqn)` gates the plugin, optionally to a class hierarchy via `inherits_from` (matched by `Index#inherits_from?`); ungated plugins apply everywhere.
 - `reasons_for_class(facts)` returns `[name, reason]` pairs — the **reason** lever (downgrade to `:low`), usually via `reference_macro`s over a gem's callback DSLs, or an override.
 - `invocations_for_class(facts)` returns `[name, macro]` pairs — the **acquit** lever, declared with `invokes`: the named methods are treated as definitely called, so they're *reached and removed* from candidates (for a DSL that genuinely invokes, like a state-machine guard).
-- **Two levers, two failure modes.** A wrong reason only adds noise; a wrong `invokes` *hides* a dead method (a false negative). That is why acquittals are always reported (see `Reachability#acquittals`): the acquit lever's risk is made auditable rather than silent. A plugin still cannot fabricate a `:high` or promote a method.
+- `account_for(facts)` returns a reach (`:public`/`:none`, a `Regexp`, or a name list; declared with `accounts_for_dispatch` or overridden) — the **account** lever: what the class's dynamic dispatch reaches, so markers stop tainting methods they can't touch.
+- **Three levers, three failure modes.** A wrong reason only adds noise; a wrong `invokes` *hides* a dead method (a false negative), which is why acquittals are always reported (`Reachability#acquittals`); a wrong account *promotes* a method to `:medium`, which is bounded because `:medium` never gates CI and names the plugin that vouched. No plugin action is invisible.
 
 ### `MethodDefinition` / `Candidate` / `Acquittal` — [lib/thanatos/method_definition.rb](../lib/thanatos/method_definition.rb), [lib/thanatos/candidate.rb](../lib/thanatos/candidate.rb), [lib/thanatos/acquittal.rb](../lib/thanatos/acquittal.rb)
-Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and owns the confidence vocabulary: `meets?(minimum)` (the ordinal threshold over `Candidate::LEVELS`, `low < medium < high`) and `gating?` (the top, build-failing level). Keeping the ordering here means the CLI holds no confidence table. `Acquittal` records a method a plugin removed from the list — `fqn`, `name`, `location`, and `sources` (which plugin/macro vouched) — for the audit report.
+Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `reasons`) and owns the confidence vocabulary: `meets?(minimum)` (the ordinal threshold over `Candidate::LEVELS`, `low < medium < high`) and `gating?` (the top, build-failing level). Keeping the ordering here means the CLI holds no confidence table. `Acquittal` records a method a plugin removed from the list — `fqn`, `name`, `location`, and `sources` (which plugin/macro vouched) — for the audit report. `Reach` ([lib/thanatos/reach.rb](../lib/thanatos/reach.rb)) wraps an account's reach spec (`:public`/`:none`, a `Regexp`, or a name list) and answers `reaches?(name)`, raising on an unrecognised spec rather than silently reaching nothing; a `DispatchAccount` pairs one with the vouching plugin's label.
 
 ### `Index` — [lib/thanatos/index.rb](../lib/thanatos/index.rb)
 **Responsibility:** the constant registry **and** the inheritance graph.
@@ -274,9 +282,16 @@ Immutable `Data` value objects. `Candidate` carries the verdict (`confidence`, `
 - **Roots** = `CLASS_BODY` + `RUNTIME_HOOKS` + every public method name in scope. `RUNTIME_HOOKS` (`initialize`, `method_missing`, `inherited`, `coerce`, …) are invoked by the runtime, never by an explicit call, so a defined hook seeds reachability like a root.
 - **A candidate** is a `private`/`protected` method not in the reached set for its dimension.
 - **`contributions`** assembles the `[facts, dimension]` pairs that share a resolution table: same-dimension (the class + ancestors + descendants) plus the **extend cross-links** (a class's singleton table draws on the instance methods of modules it extends, and vice-versa).
-- **Plugins (optional).** `apply_plugins!` runs after `resolve_inheritance!` and before grading: each applicable plugin contributes reasons (→ `plugin_reasons`, the reason lever) and/or invocations (→ `acquittals`, the acquit lever).
+- **Plugins (optional).** `apply_plugins!` runs after `resolve_inheritance!` and before grading: each applicable plugin contributes reasons (→ `plugin_reasons`), invocations (→ `acquittals`), and/or a dispatch account (→ `dispatch_accounts`) — the reason, acquit, and account levers.
 - **Acquit.** A plugin's `invokes` names seed extra reachability roots, so an acquitted method is *reached* and never a candidate. `acquittals` is the with/without-acquit diff — methods removed *only* because a plugin vouched — surfaced for audit (redundant acquits, where real code also reaches the method, are not reported).
-- **Confidence** is `:high` unless `reasons_for` finds doubt over the hierarchy: the merged `ReferenceSignals` raises a reason (a **symbol literal** matching the name, or **any dynamic-dispatch marker** in the hierarchy), a `protected` method has a matching **explicit call**, or a **plugin** attached a reason. Otherwise `:low`. Confidence is still literally `reasons.empty? ? :high : :low`. *(The signal merge walks `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
+- **Confidence** is delegated to `Grader` (one per hierarchy). `Reachability` decides only *reached vs not*; `Grader` decides *how confident, and why*.
+
+### `Grader` — [lib/thanatos/grader.rb](../lib/thanatos/grader.rb)
+**Responsibility:** grade an unreached candidate — the confidence and its reasons.
+**Encoded logic:**
+- Confidence is decided from *structure*, not `reasons.empty?`. Any **doubt** → `:low`: a **symbol literal** matching the name, an **explicit call** for a `protected` method, a **plugin reason**, or a **marker** that `resolve_markers` finds *tainting* (an unaccounted dynamic-dispatch class in the hierarchy, or an account whose reach names the method). No doubt but a marker that's fully accounted-for and doesn't reach the method → `:medium` (with the accounting plugin's provenance). No doubt and no marker → `:high`.
+- Each branch returns its own reasons via a `Verdict`, so the confidence decision never touches a mutable reason list. `resolve_markers` returns a `MarkerResolution` (data — which accounts, which classes), which renders its own provenance; the decision stays string-free.
+- *(The signal merge and marker walk span `ancestors`/`descendants` — `include`/`prepend` — but not `extend`; see [the mixin matrix tests](../test/mixin_confidence_test.rb).)*
 
 ### `LocalVariables` — [lib/thanatos/local_variables.rb](../lib/thanatos/local_variables.rb)
 A separate `Prism::Visitor` for a fully **decidable** problem (see [decidability.md](decidability.md)).
@@ -312,4 +327,4 @@ The call graph is deliberately **name-based, not binding-based**: Thanatos never
 - **Reachability from roots**, not "has a caller" — dead clusters and recursion are still reported.
 - **Only a *proof* removes a candidate.** A literal `send(:x)` acquits `x` (it is genuinely called); a plugin's `invokes` is the same claim, asserted from outside the source. A mere *hint* of dynamic reach (a computed `send`, a bare symbol) **downgrades to `:low`**, it does not delete the finding — so a real dead method is never silently dropped, only flagged for review.
 - **Scope is the boundary.** Thanatos only knows the files it was given. A caller in a gem, a Rails engine, or a view is "out of architecture" and looks the same as an unused public method — which is why public-method and constant liveness are explicitly [out of scope](../test/out_of_scope_test.rb) for the static tier.
-- **Plugin risk is bounded and auditable.** A `Plugin` has two levers: *downgrade* (attach a reason → `:low`) and *acquit* (declare a method definitely invoked → reached, removed). Downgrading only adds noise; acquitting can hide a dead method (a false negative), so every acquittal is reported for review — the risk is made legible, not silent. A plugin still cannot promote a method or fabricate a `:high`. See [plugins.md](plugins.md).
+- **Plugin risk is bounded and auditable.** A `Plugin` has three levers: *downgrade* (reason → `:low`), *acquit* (declare a definite call → reached, removed), and *account* (declare what a marker reaches → `:medium` for what it can't). Each failure mode is contained and legible: a wrong reason is noise; a wrong acquit hides a method, so acquittals are always reported; a wrong account promotes a method to `:medium`, which never gates CI and names the plugin that vouched. A plugin still cannot reach `:high`. See [plugins.md](plugins.md).

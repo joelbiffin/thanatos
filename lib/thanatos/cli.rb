@@ -58,8 +58,11 @@ module Thanatos
         end
 
         high = candidates.count { |candidate| candidate.meets?(:high) }
+        medium = candidates.count { |candidate| candidate.confidence == :medium }
         @out.puts ""
-        @out.puts "#{candidates.length} candidate(s), #{high} high-confidence."
+        summary = "#{candidates.length} candidate(s), #{high} high-confidence"
+        summary += ", #{medium} medium" if medium.positive?
+        @out.puts "#{summary}."
       end
 
       report_acquittals(acquittals) unless acquittals.empty?

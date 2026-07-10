@@ -50,21 +50,20 @@ class ReferenceSignalsTest < Minitest::Test
     assert_empty signals.reasons_for(definition(:bar))
   end
 
-  test "any dynamic marker taints every method, listing the markers sorted" do
-    signals.record_dynamic_marker(:send)
-    signals.record_dynamic_marker(:define_method)
-
-    assert_includes signals.reasons_for(definition(:anything)),
-      "class uses dynamic dispatch (define_method, send)"
-  end
-
-  test "reasons are ordered symbol-literal then dynamic-dispatch" do
+  test "reasons_for is symbol-literal only; markers are rendered separately" do
     signals.record_symbol_literal(:foo)
     signals.record_dynamic_marker(:send)
 
-    assert_equal [
-      "referenced as symbol literal :foo (callback/delegate/send?)",
-      "class uses dynamic dispatch (send)",
-    ], signals.reasons_for(definition(:foo))
+    assert_equal ["referenced as symbol literal :foo (callback/delegate/send?)"],
+      signals.reasons_for(definition(:foo))
+  end
+
+  test "dynamic_dispatch_reason lists the markers sorted, or nil when there are none" do
+    assert_nil signals.dynamic_dispatch_reason
+
+    signals.record_dynamic_marker(:send)
+    signals.record_dynamic_marker(:define_method)
+
+    assert_equal "class uses dynamic dispatch (define_method, send)", signals.dynamic_dispatch_reason
   end
 end
