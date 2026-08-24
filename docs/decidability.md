@@ -15,13 +15,16 @@ them to low confidence with a reason rather than claiming them dead.
 
 [Plugins](plugins.md) don't move this boundary — they supply knowledge from
 *outside* the source rather than deciding anything the static tool couldn't. A
-plugin either sharpens the *reason* on an abstention ("invoked as a
-`before_action` callback" instead of the generic "referenced as a symbol
-literal"), or, for a DSL that genuinely invokes a method, *acquits* it by
-declaring the call the tool can't see (a state-machine guard). The acquit is a
-claim of reachability, but it's the plugin author's claim about the gem — not
-the static analysis suddenly deciding an undecidable case. And because a wrong
-acquit could hide a real dead method, every acquittal is reported for review.
+plugin can sharpen the *reason* on an abstention ("invoked as a `before_action`
+callback" instead of the generic "referenced as a symbol literal"); *acquit* a
+method a DSL genuinely invokes by declaring the call the tool can't see (a
+state-machine guard); or *account* for a dynamic construct by declaring what it
+reaches, so the tool stops hedging on the methods it provably can't touch (those
+become `medium`). Acquit is a claim of reachability and account is a claim of
+*un*-reachability, but both are the plugin author's claim about the gem — not the
+static analysis suddenly deciding an undecidable case. And because those claims
+can be wrong, they're made legible: acquittals are reported for review, and a
+plugin-vouched `medium` names the plugin and never gates CI.
 
 ## Decidable — implemented
 

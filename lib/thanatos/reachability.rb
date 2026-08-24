@@ -40,9 +40,12 @@ module Thanatos
 
       @index.all.each do |facts|
         hierarchy = [facts, *@index.ancestors(facts.fqn), *@index.descendants(facts.fqn)]
-        signals = merged_signals(hierarchy)
-        explicit = union(hierarchy, :explicit_calls)
-        plugin_reasons = union_plugin_reasons(hierarchy)
+        grader = Grader.new(
+          signals: merged_signals(hierarchy),
+          hierarchy:,
+          explicit_calls: union(hierarchy, :explicit_calls),
+          plugin_reasons: union_plugin_reasons(hierarchy)
+        )
 
         %i[instance singleton].each do |dimension|
           scope = contributions(facts, dimension)
@@ -61,14 +64,14 @@ module Thanatos
               next
             end
 
-            reasons = reasons_for(definition, signals:, explicit_calls: explicit, plugin_reasons:)
+            verdict = grader.grade(definition)
             @candidates << Candidate.new(
               fqn: facts.fqn,
               name:,
               visibility: definition.visibility,
               location: definition.location,
-              confidence: reasons.empty? ? :high : :low,
-              reasons:
+              confidence: verdict.confidence,
+              reasons: verdict.reasons
             )
           end
         end
@@ -86,6 +89,9 @@ module Thanatos
 
           plugin.reasons_for_class(facts).each { |name, reason| facts.plugin_reasons[name] << reason }
           plugin.invocations_for_class(facts).each { |name, macro| facts.acquittals[name] << "#{plugin_label(plugin)} via #{macro}" }
+          if (reach = plugin.account_for(facts))
+            facts.dispatch_accounts << DispatchAccount.new(reach: Reach.new(reach), source: plugin_label(plugin))
+          end
         end
       end
     end
@@ -174,17 +180,6 @@ module Thanatos
         graph[method].each { |callee| queue << callee unless reached.include?(callee) }
       end
       reached
-    end
-
-    def reasons_for(definition, signals:, explicit_calls:, plugin_reasons:)
-      reasons = signals.reasons_for(definition)
-
-      if definition.visibility == :protected && explicit_calls.include?(definition.name)
-        reasons << "explicit call .#{definition.name} in the hierarchy (possible protected use)"
-      end
-
-      reasons.concat(plugin_reasons[definition.name])
-      reasons
     end
 
     def union(hierarchy, attribute)

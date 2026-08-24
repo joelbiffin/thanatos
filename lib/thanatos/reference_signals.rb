@@ -28,17 +28,15 @@ module Thanatos
     end
 
     def reasons_for(definition)
-      reasons = []
+      return [] unless @symbol_literals.include?(definition.name)
 
-      if @symbol_literals.include?(definition.name)
-        reasons << "referenced as symbol literal :#{definition.name} (callback/delegate/send?)"
-      end
+      ["referenced as symbol literal :#{definition.name} (callback/delegate/send?)"]
+    end
 
-      if @dynamic_markers.any?
-        reasons << "class uses dynamic dispatch (#{@dynamic_markers.sort.join(', ')})"
-      end
+    def dynamic_dispatch_reason
+      return if @dynamic_markers.empty?
 
-      reasons
+      "class uses dynamic dispatch (#{@dynamic_markers.sort.join(', ')})"
     end
   end
 end

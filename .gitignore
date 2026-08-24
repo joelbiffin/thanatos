@@ -1,3 +1,4 @@
 .*/
 vendor/
 trace.json
+/dogfood/

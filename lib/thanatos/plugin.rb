@@ -44,6 +44,14 @@ module Thanatos
         @invoke_specs || {}
       end
 
+      def accounts_for_dispatch(reaches:)
+        @dispatch_reach = reaches
+      end
+
+      def dispatch_reach
+        @dispatch_reach
+      end
+
       def base_names
         @base_names || []
       end
@@ -77,6 +85,10 @@ module Thanatos
       self.class.invoke_specs.each_value.flat_map do |spec|
         facts.signals.call_sites.select { |site| site.name == spec.name }.flat_map { |site| spec.invocations(site) }
       end
+    end
+
+    def account_for(_facts)
+      self.class.dispatch_reach
     end
   end
 end

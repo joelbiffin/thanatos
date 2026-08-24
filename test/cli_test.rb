@@ -87,4 +87,31 @@ class CliTest < Minitest::Test
     assert_includes out.string, "acquitted"
     assert_includes out.string, "barable?"
   end
+
+  ACCOUNT_PLUGIN = <<~RUBY
+    class SvcPlugin < Thanatos::Plugin
+      inherits_from "Svc"
+      accounts_for_dispatch reaches: :public
+    end
+    Thanatos.configure { |c| c.register_plugin(SvcPlugin) }
+  RUBY
+
+  ACCOUNT_TARGET = <<~RUBY
+    module Svc
+      def call(name); new.public_send(name); end
+    end
+    class Charge
+      include Svc
+      def call; end
+      private
+      def dead_helper; end
+    end
+  RUBY
+
+  test "the summary itemises medium findings once a plugin accounts for a marker" do
+    out = StringIO.new
+    Thanatos::CLI.run([write_ruby(ACCOUNT_TARGET), "--plugins", write_ruby(ACCOUNT_PLUGIN)], out:)
+
+    assert_match(/1 medium/, out.string)
+  end
 end
